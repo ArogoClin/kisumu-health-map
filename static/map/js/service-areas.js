@@ -14,7 +14,7 @@ function createServiceAreas() {
     showLoading('Loading service areas...');
     
     // Fetch merged service areas from the server
-    fetch('/maps/api/merged-service-areas/')
+    fetch('/maps/api/travel-time-analysis/')
         .then(response => {
             if (!response.ok) {
                 throw new Error(`Server returned ${response.status}: ${response.statusText}`);
@@ -25,10 +25,21 @@ function createServiceAreas() {
             // Hide loading indicator
             hideLoading();
             
-            console.log("Received merged buffer data from server");
+            console.log("Received travel time analysis data from server");
             
-            // Add the merged buffer to the map
-            const bufferLayerItem = L.geoJSON(data, {
+            if (data.error) {
+                console.error("Server returned error:", data.error);
+                throw new Error(data.error);
+            }
+            
+            // Use the 5-minute isochrones as service areas
+            const serviceAreas = {
+                type: 'FeatureCollection',
+                features: data.isochrones.filter(iso => iso.properties.travel_time === 5)
+            };
+            
+            // Add the service areas to the map
+            const bufferLayerItem = L.geoJSON(serviceAreas, {
                 style: {
                     color: '#27ae60',
                     fillColor: '#2ecc71',
@@ -40,16 +51,19 @@ function createServiceAreas() {
             // Add a popup explaining this is a service area
             bufferLayerItem.bindPopup(`
                 <strong>Healthcare Service Area</strong><br>
-                <em>Areas within 5km of healthcare facilities</em>
+                <em>Areas within 5-minute travel time of healthcare facilities</em>
             `);
             
             // Add to buffer layer group
             bufferLayer.addLayer(bufferLayerItem);
             
-            console.log("Added merged buffer to map");
+            // Store the full data for later use
+            bufferLayer.travelTimeData = data;
+            
+            console.log("Added service areas to map");
         })
         .catch(error => {
-            console.error('Error fetching merged service areas:', error);
+            console.error('Error fetching travel time analysis:', error);
             hideLoading();
             
             // Fallback to client-side buffer creation
@@ -116,9 +130,8 @@ function identifyUnderservedAreas() {
     // Show loading indicator
     showLoading('Analyzing underserved areas...');
     
-    // Get ward data and buffer data
+    // Get ward data
     const wardsData = wardLayer.toGeoJSON();
-    const buffersData = bufferLayer.toGeoJSON();
     
     if (wardsData.features.length === 0) {
         console.log("No ward data available");
@@ -126,84 +139,298 @@ function identifyUnderservedAreas() {
         return;
     }
     
-    if (buffersData.features.length === 0) {
-        console.log("No buffer data available");
-        hideLoading();
-        return;
+    // Check if buffer layer has features
+    if (!bufferLayer || bufferLayer.getLayers().length === 0) {
+        console.log("No buffer data available - creating service areas first");
+        
+        // Create service areas then process underserved areas
+        createServiceAreas();
+        
+        // Wait for service areas to be created before continuing
+        const checkBufferInterval = setInterval(() => {
+            if (bufferLayer.getLayers().length > 0) {
+                clearInterval(checkBufferInterval);
+                const buffersData = bufferLayer.toGeoJSON();
+                processUnderservedAreas(wardsData, buffersData);
+            }
+        }, 1000);
+        
+        // Set a timeout to prevent infinite waiting
+        setTimeout(() => {
+            clearInterval(checkBufferInterval);
+            if (bufferLayer.getLayers().length === 0) {
+                console.log("Timeout waiting for service areas - using ward centers");
+                processUnderservedAreasWithPopulation(wardsData);
+            }
+        }, 10000);
+    } else {
+        // Use existing buffer layer
+        const buffersData = bufferLayer.toGeoJSON();
+        processUnderservedAreas(wardsData, buffersData);
     }
-    
-    console.log(`Processing ${wardsData.features.length} wards against ${buffersData.features.length} buffers`);
+}
+
+// Helper function to process underserved areas
+function processUnderservedAreas(wardsData, buffersData) {
+    console.log(`Processing ${wardsData.features.length} wards against buffer data`);
     
     // Process each ward to check coverage
-    wardsData.features.forEach(function(ward) {
-        let isUnderserved = true;
-        
-        // Skip if the ward has no geometry
-        if (!ward.geometry) {
-            console.log("Ward has no geometry:", ward.properties.ward);
-            return;
-        }
-        
-        // Check if this ward intersects with any facility buffer
-        for (let i = 0; i < buffersData.features.length; i++) {
-            const buffer = buffersData.features[i];
+    const wardPromises = wardsData.features.map(ward => {
+        return new Promise((resolve) => {
+            let isUnderserved = true;
             
-            // Skip if the buffer has no geometry
-            if (!buffer.geometry) continue;
+            // Skip if the ward has no geometry
+            if (!ward.geometry) {
+                console.log("Ward has no geometry:", ward.properties.ward);
+                resolve(null);
+                return;
+            }
             
             try {
-                const intersection = turf.intersect(ward, buffer);
-                if (intersection) {
-                    // Calculate the area of intersection
-                    const intersectionArea = turf.area(intersection);
-                    const wardArea = turf.area(ward);
-                    
-                    // If more than 30% of the ward is covered, it's not underserved
-                    if (intersectionArea / wardArea > 0.3) {
-                        isUnderserved = false;
-                        break;
+                // Check if this ward intersects with the buffer
+                // If buffersData is a FeatureCollection, use the first feature
+                let bufferGeometry;
+                if (buffersData.type === 'FeatureCollection') {
+                    if (buffersData.features.length > 0) {
+                        bufferGeometry = buffersData.features[0];
+                    } else {
+                        console.log("Empty buffer feature collection");
+                        resolve(null);
+                        return;
                     }
+                } else {
+                    // Assume it's a single Feature
+                    bufferGeometry = buffersData;
+                }
+                
+                if (!bufferGeometry || !bufferGeometry.geometry) {
+                    console.log("Invalid buffer geometry");
+                    resolve(null);
+                    return;
+                }
+                
+                // Use try-catch for the intersection operation as it might fail
+                try {
+                    const intersection = turf.intersect(ward, bufferGeometry);
+                    
+                    if (intersection) {
+                        // Calculate the area of intersection
+                        const intersectionArea = turf.area(intersection);
+                        const wardArea = turf.area(ward);
+                        
+                        // If more than 30% of the ward is covered, it's not underserved
+                        if (intersectionArea / wardArea > 0.3) {
+                            isUnderserved = false;
+                        }
+                    }
+                } catch (intersectError) {
+                    console.error("Error in turf.intersect:", intersectError);
+                    // If intersection fails, try a simpler approach
+                    try {
+                        // Check if the ward center is within the buffer
+                        const wardCenter = turf.center(ward);
+                        const isWithin = turf.booleanPointInPolygon(
+                            wardCenter, 
+                            bufferGeometry.geometry.type === 'MultiPolygon' 
+                                ? turf.multiPolygon(bufferGeometry.geometry.coordinates)
+                                : bufferGeometry
+                        );
+                        
+                        if (isWithin) {
+                            isUnderserved = false;
+                        }
+                    } catch (pointInPolyError) {
+                        console.error("Error in point-in-polygon check:", pointInPolyError);
+                    }
+                }
+                
+                // If the ward is underserved, get population data and add to layer
+                if (isUnderserved) {
+                    // Use population density API to get accurate population
+                    fetch('/maps/api/population-density-for-area/', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ area: ward })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        // Get population from API or fallback to ward properties
+                        const population = data.estimated_population || ward.properties.pop2009 || 'Unknown';
+                        
+                        // Create the underserved ward layer
+                        const underservedWardLayer = L.geoJSON(ward, {
+                            style: {
+                                color: "#e74c3c",
+                                weight: 2,
+                                fillOpacity: 0.3,
+                                fillColor: "#e74c3c"
+                            }
+                        });
+                        
+                        // Add a popup with population information
+                        const wardName = ward.properties.ward;
+                        underservedWardLayer.bindPopup(`
+                            <strong>Underserved Area: ${wardName}</strong><br>
+                            <p><strong>Population:</strong> ${population.toLocaleString()}</p>
+                            <p><strong>Area:</strong> ${(data.area_km2 || 0).toFixed(2)} km²</p>
+                            <p><strong>Population Density:</strong> ${(data.mean_density || 0).toFixed(0)} people/km²</p>
+                            <p><em>This area has limited access to healthcare facilities within 5km</em></p>
+                        `);
+                        
+                        // Add to the underserved layer group
+                        underservedLayer.addLayer(underservedWardLayer);
+                        resolve(underservedWardLayer);
+                    })
+                    .catch(error => {
+                        console.error("Error fetching population data:", error);
+                        
+                        // Fallback to basic ward information
+                        const underservedWardLayer = L.geoJSON(ward, {
+                            style: {
+                                color: "#e74c3c",
+                                weight: 2,
+                                fillOpacity: 0.3,
+                                fillColor: "#e74c3c"
+                            }
+                        });
+                        
+                        const wardName = ward.properties.ward;
+                        const population = ward.properties.pop2009 || 'Unknown';
+                        
+                        underservedWardLayer.bindPopup(`
+                            <strong>Underserved Area: ${wardName}</strong><br>
+                            Population (2009): ${population}<br>
+                            <em>This area has limited access to healthcare facilities within 5km</em>
+                        `);
+                        
+                        underservedLayer.addLayer(underservedWardLayer);
+                        resolve(underservedWardLayer);
+                    });
+                } else {
+                    resolve(null);
                 }
             } catch (e) {
                 console.error("Error in intersection calculation:", e);
+                resolve(null);
             }
-        }
+        });
+    });
+    
+    // Wait for all ward processing to complete
+    Promise.all(wardPromises)
+        .then(results => {
+            const validResults = results.filter(r => r !== null);
+            hideLoading();
+            console.log(`Found ${validResults.length} underserved wards`);
+        })
+        .catch(error => {
+            console.error("Error processing underserved areas:", error);
+            hideLoading();
+        });
+}
+
+// Alternative function when buffer data isn't available
+function processUnderservedAreasWithPopulation(wardsData) {
+    console.log("Processing underserved areas using population density data");
+    
+    // Get all facilities
+    const facilitiesData = facilitiesLayer.toGeoJSON();
+    
+    // Process each ward
+    wardsData.features.forEach(ward => {
+        // Skip if the ward has no geometry
+        if (!ward.geometry) return;
         
-        // If the ward is underserved, add it to the underserved layer
-        if (isUnderserved) {
-            try {
-                console.log("Found underserved ward:", ward.properties.ward);
+        try {
+            // Get the ward center
+            const wardCenter = turf.center(ward);
+            
+            // Check if any facility is within 5km of the ward center
+            let hasNearbyFacility = false;
+            
+            for (const facility of facilitiesData.features) {
+                const distance = turf.distance(
+                    wardCenter,
+                    facility,
+                    { units: 'kilometers' }
+                );
                 
-                // Add to underserved layer with styling
-                const underservedWardLayer = L.geoJSON(ward, {
-                    style: {
-                        color: "#e74c3c",
-                        weight: 2,
-                        fillOpacity: 0.3,
-                        fillColor: "#e74c3c"
-                    }
-                });
-                
-                // Add a popup explaining this is an underserved area
-                const wardName = ward.properties.ward;
-                const population = ward.properties.pop2009;
-                
-                underservedWardLayer.bindPopup(`
-                    <strong>Underserved Area: ${wardName}</strong><br>
-                    Population (2009): ${population || 'N/A'}<br>
-                    <em>This area has limited access to healthcare facilities within 5km</em>
-                `);
-                
-                // Add to the underserved layer group
-                underservedLayer.addLayer(underservedWardLayer);
-            } catch (e) {
-                console.error("Error adding underserved ward to layer:", e);
+                if (distance <= 5) {
+                    hasNearbyFacility = true;
+                    break;
+                }
             }
+            
+            // If no nearby facility, mark as underserved
+            if (!hasNearbyFacility) {
+                // Use population density API to get accurate population
+                fetch('/maps/api/population-density-for-area/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ area: ward })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // Create the underserved ward layer
+                    const underservedWardLayer = L.geoJSON(ward, {
+                        style: {
+                            color: "#e74c3c",
+                            weight: 2,
+                            fillOpacity: 0.3,
+                            fillColor: "#e74c3c"
+                        }
+                    });
+                    
+                    // Add a popup with population information
+                    const wardName = ward.properties.ward;
+                    const population = data.estimated_population || ward.properties.pop2009 || 'Unknown';
+                    
+                    underservedWardLayer.bindPopup(`
+                        <strong>Underserved Area: ${wardName}</strong><br>
+                        <p><strong>Population:</strong> ${population.toLocaleString()}</p>
+                        <p><strong>Area:</strong> ${(data.area_km2 || 0).toFixed(2)} km²</p>
+                        <p><strong>Population Density:</strong> ${(data.mean_density || 0).toFixed(0)} people/km²</p>
+                        <p><em>This area has no healthcare facilities within 5km</em></p>
+                    `);
+                    
+                    // Add to the underserved layer group
+                    underservedLayer.addLayer(underservedWardLayer);
+                })
+                .catch(error => {
+                    console.error("Error fetching population data:", error);
+                    
+                    // Fallback to basic ward information
+                    const underservedWardLayer = L.geoJSON(ward, {
+                        style: {
+                            color: "#e74c3c",
+                            weight: 2,
+                            fillOpacity: 0.3,
+                            fillColor: "#e74c3c"
+                        }
+                    });
+                    
+                    const wardName = ward.properties.ward;
+                    const population = ward.properties.pop2009 || 'Unknown';
+                    
+                    underservedWardLayer.bindPopup(`
+                        <strong>Underserved Area: ${wardName}</strong><br>
+                        Population (2009): ${population}<br>
+                        <em>This area has no healthcare facilities within 5km</em>
+                    `);
+                    
+                    underservedLayer.addLayer(underservedWardLayer);
+                });
+            }
+        } catch (e) {
+            console.error("Error processing ward for underserved analysis:", e);
         }
     });
     
     hideLoading();
-    console.log(`Found ${underservedLayer.getLayers().length} underserved wards`);
 }
 
 // Function to identify coverage gaps
@@ -216,92 +443,219 @@ function identifyCoverageGaps() {
     // Show loading indicator
     showLoading('Analyzing coverage gaps...');
     
-    // Get ward data and buffer data
+    // Get ward data
     const wardsData = wardLayer.toGeoJSON();
-    const buffersData = bufferLayer.toGeoJSON();
     
-    if (wardsData.features.length === 0 || buffersData.features.length === 0) {
-        console.log("Missing data for coverage gap analysis");
+    // Check if buffer layer has features
+    if (!bufferLayer || bufferLayer.getLayers().length === 0) {
+        console.log("No buffer data available - creating service areas first");
+        
+        // Create service areas then process coverage gaps
+        createServiceAreas();
+        
+        // Wait for service areas to be created before continuing
+        const checkBufferInterval = setInterval(() => {
+            if (bufferLayer.getLayers().length > 0) {
+                clearInterval(checkBufferInterval);
+                const buffersData = bufferLayer.toGeoJSON();
+                processCoverageGaps(wardsData, buffersData);
+            }
+        }, 1000);
+        
+        // Set a timeout to prevent infinite waiting
+        setTimeout(() => {
+            clearInterval(checkBufferInterval);
+            if (bufferLayer.getLayers().length === 0) {
+                console.log("Timeout waiting for service areas - using ward centers");
+                hideLoading();
+                alert("Could not create service areas. Please try again.");
+            }
+        }, 10000);
+    } else {
+        // Use existing buffer layer
+        const buffersData = bufferLayer.toGeoJSON();
+        processCoverageGaps(wardsData, buffersData);
+    }
+}
+
+// Helper function to process coverage gaps
+function processCoverageGaps(wardsData, buffersData) {
+    if (wardsData.features.length === 0) {
+        console.log("No ward data available for coverage gap analysis");
         hideLoading();
         return;
     }
     
-    // Since we're now using a merged buffer from the server, we don't need to combine them again
-    // The buffersData should already contain the merged buffer
+    // Get the buffer geometry
+    let bufferGeometry;
+    if (buffersData.type === 'FeatureCollection') {
+        if (buffersData.features.length > 0) {
+            bufferGeometry = buffersData.features[0];
+        } else {
+            console.log("Empty buffer feature collection");
+            hideLoading();
+            return;
+        }
+    } else {
+        // Assume it's a single Feature
+        bufferGeometry = buffersData;
+    }
+    
+    if (!bufferGeometry || !bufferGeometry.geometry) {
+        console.log("Invalid buffer geometry for coverage gap analysis");
+        hideLoading();
+        return;
+    }
     
     // Process each ward to find gaps
-    wardsData.features.forEach(function(ward) {
-        // Skip if the ward has no geometry
-        if (!ward.geometry) return;
-        
-        try {
-            // Find the difference between the ward and the buffer
-            // Since buffersData should now be a single merged feature, we can use the first feature
-            const buffer = buffersData.features[0];
-            
-            if (!buffer) {
-                console.log("No buffer data available for difference operation");
+    const wardPromises = wardsData.features.map(ward => {
+        return new Promise((resolve) => {
+            // Skip if the ward has no geometry
+            if (!ward.geometry) {
+                resolve(null);
                 return;
             }
             
-            // Find the difference between the ward and the buffer
-            const difference = turf.difference(ward, buffer);
-            
-            // If there's a difference and it has significant area
-            if (difference) {
-                // Calculate what percentage of the ward is uncovered
-                const wardArea = turf.area(ward);
-                const uncoveredArea = turf.area(difference);
-                const uncoveredPercentage = (uncoveredArea / wardArea) * 100;
+            try {
+                // Find the difference between the ward and the buffer
+                let difference;
                 
-                // Only consider it a gap if more than 40% is uncovered
-                if (uncoveredPercentage > 40) {
-                    console.log("Found coverage gap in ward:", ward.properties.ward,
-                                "Uncovered:", uncoveredPercentage.toFixed(1) + "%");
-                    
-                    // Get population data
-                    const population = ward.properties.pop2009 || 'Unknown';
-                    const wardName = ward.properties.ward;
-                    
-                    // Estimate uncovered population (simple proportion)
-                    const estimatedUncoveredPopulation =
-                        population !== 'Unknown'
-                            ? Math.round(population * (uncoveredArea / wardArea))
-                            : 'Unknown';
-                    
-                    // Calculate priority score
-                    const priorityScore = calculatePriorityScore(population, uncoveredPercentage);
-                    
-                    // Add to coverage gap layer with styling
-                    const gapLayer = L.geoJSON(difference, {
-                        style: {
-                            color: "#9b59b6",
-                            weight: 2,
-                            fillOpacity: 0.4,
-                            fillColor: "#8e44ad"
-                        }
-                    });
-                    
-                    // Add popup with information
-                    gapLayer.bindPopup(`
-                        <strong>Coverage Gap: ${wardName}</strong><br>
-                        <p><strong>Uncovered Area:</strong> ${Math.round(uncoveredPercentage)}% of ward</p>
-                        <p><strong>Est. Population Affected:</strong> ${estimatedUncoveredPopulation}</p>
-                        <p><strong>Priority Score:</strong> ${priorityScore}/100</p>
-                        <p><em>Recommendation: ${getRecommendation(priorityScore)}</em></p>
-                    `);
-                    
-                    // Add to the coverage gap layer group
-                    coverageGapLayer.addLayer(gapLayer);
+                try {
+                    difference = turf.difference(ward, bufferGeometry);
+                } catch (diffError) {
+                    console.error("Error in turf.difference:", diffError);
+                    // If difference fails, try a simpler approach
+                    resolve(null);
+                    return;
                 }
+                
+                // If there's a difference and it has significant area
+                if (difference) {
+                    // Calculate what percentage of the ward is uncovered
+                    const wardArea = turf.area(ward);
+                    const uncoveredArea = turf.area(difference);
+                    const uncoveredPercentage = (uncoveredArea / wardArea) * 100;
+                    
+                    // Only consider it a gap if more than 40% is uncovered
+                    if (uncoveredPercentage > 40) {
+                        console.log("Found coverage gap in ward:", ward.properties.ward,
+                                    "Uncovered:", uncoveredPercentage.toFixed(1) + "%");
+                        
+                        // Use population density API to get accurate population for the uncovered area
+                        fetch('/maps/api/population-density-for-area/', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({ area: difference })
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            // Get population from API or fallback to ward properties
+                            const wardName = ward.properties.ward;
+                            const totalPopulation = ward.properties.pop2009 || 'Unknown';
+                            
+                            // Get the estimated population in the uncovered area
+                            const uncoveredPopulation = data.estimated_population || 
+                                (totalPopulation !== 'Unknown' 
+                                    ? Math.round(totalPopulation * (uncoveredArea / wardArea))
+                                    : 'Unknown');
+                            
+                            // Calculate priority score
+                            const priorityScore = calculatePriorityScore(
+                                uncoveredPopulation, 
+                                uncoveredPercentage
+                            );
+                            
+                            // Add to coverage gap layer with styling
+                            const gapLayer = L.geoJSON(difference, {
+                                style: {
+                                    color: "#9b59b6",
+                                    weight: 2,
+                                    fillOpacity: 0.4,
+                                    fillColor: "#8e44ad"
+                                }
+                            });
+                            
+                            // Add popup with information
+                            gapLayer.bindPopup(`
+                                <strong>Coverage Gap: ${wardName}</strong><br>
+                                <p><strong>Uncovered Area:</strong> ${Math.round(uncoveredPercentage)}% of ward</p>
+                                <p><strong>Est. Population Affected:</strong> ${uncoveredPopulation.toLocaleString()}</p>
+                                <p><strong>Population Density:</strong> ${(data.mean_density || 0).toFixed(0)} people/km²</p>
+                                <p><strong>Priority Score:</strong> ${priorityScore}/100</p>
+                                <p><em>Recommendation: ${getRecommendation(priorityScore)}</em></p>
+                            `);
+                            
+                            // Add to the coverage gap layer group
+                            coverageGapLayer.addLayer(gapLayer);
+                            resolve(gapLayer);
+                        })
+                        .catch(error => {
+                            console.error("Error fetching population data for gap:", error);
+                            
+                            // Fallback to proportional calculation
+                            const wardName = ward.properties.ward;
+                            const totalPopulation = ward.properties.pop2009 || 'Unknown';
+                            
+                            // Calculate uncovered population proportionally
+                            const uncoveredPopulation = totalPopulation !== 'Unknown' 
+                                ? Math.round(totalPopulation * (uncoveredArea / wardArea))
+                                : 'Unknown';
+                            
+                            // Calculate priority score
+                            const priorityScore = calculatePriorityScore(
+                                uncoveredPopulation,
+                                uncoveredPercentage
+                            );
+                            
+                            // Add to coverage gap layer with styling
+                            const gapLayer = L.geoJSON(difference, {
+                                style: {
+                                    color: "#9b59b6",
+                                    weight: 2,
+                                    fillOpacity: 0.4,
+                                    fillColor: "#8e44ad"
+                                }
+                            });
+                            
+                            // Add popup with information
+                            gapLayer.bindPopup(`
+                                <strong>Coverage Gap: ${wardName}</strong><br>
+                                <p><strong>Uncovered Area:</strong> ${Math.round(uncoveredPercentage)}% of ward</p>
+                                <p><strong>Est. Population Affected:</strong> ${uncoveredPopulation.toLocaleString()}</p>
+                                <p><strong>Priority Score:</strong> ${priorityScore}/100</p>
+                                <p><em>Recommendation: ${getRecommendation(priorityScore)}</em></p>
+                            `);
+                            
+                            // Add to the coverage gap layer group
+                            coverageGapLayer.addLayer(gapLayer);
+                            resolve(gapLayer);
+                        });
+                    } else {
+                        resolve(null);
+                    }
+                } else {
+                    resolve(null);
+                }
+            } catch (e) {
+                console.error("Error processing ward for coverage gap analysis:", e);
+                resolve(null);
             }
-        } catch (e) {
-            console.error("Error calculating coverage gap for ward:", ward.properties.ward, e);
-        }
+        });
     });
     
-    hideLoading();
-    console.log(`Found ${coverageGapLayer.getLayers().length} coverage gaps`);
+    // Wait for all ward processing to complete
+    Promise.all(wardPromises)
+        .then(results => {
+            const validResults = results.filter(r => r !== null);
+            hideLoading();
+            console.log(`Found ${validResults.length} coverage gaps`);
+        })
+        .catch(error => {
+            console.error("Error processing coverage gaps:", error);
+            hideLoading();
+        });
 }
 
 // Helper function to calculate priority score for decision making
@@ -309,7 +663,7 @@ function calculatePriorityScore(population, uncoveredPercentage) {
     // Convert population to number if it's a string
     const pop = typeof population === 'string' ? 0 : population;
     
-    // Calculate population density factor (0-60 points)
+    // Calculate population factor (0-60 points)
     // Higher population gets higher priority
     let populationFactor = 0;
     if (pop > 0) {
@@ -420,4 +774,5 @@ document.getElementById('coverageGapToggle').addEventListener('change', function
         map.removeLayer(coverageGapLayer);
     }
 });
+
 

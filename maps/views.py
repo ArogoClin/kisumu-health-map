@@ -21,6 +21,7 @@ import time
 import os
 import pickle
 from shapely.affinity import scale
+from decimal import Decimal
 
 
 
@@ -765,18 +766,25 @@ def healthcare_dashboard(request):
     
     # Create summary stats object
     summary_stats = {
-        'total_population': total_population,
+        'total_population': float(total_population) if isinstance(total_population, Decimal) else total_population,
         'total_facilities': total_facilities,
         'coverage_percent': coverage_percent,
         'travel_time_coverage': travel_time_coverage
     }
+
+    # Custom JSON to handle Decimal objects
+    class DecimalEncoder(json.JSONEncoder):
+        def default(self, obj):
+            if isinstance(obj, Decimal):
+                return float(obj)
+            return super(DecimalEncoder, self).default(obj)
 
     context = {
         'county': county_json,
         'constituencies': constituencies_json,
         'wards': wards_json,
         'facilities': facilities_json,
-        'summary_stats': json.dumps(summary_stats)
+        'summary_stats': json.dumps(summary_stats, cls=DecimalEncoder),
     }
 
     return render(request, 'maps/dashboard.html', context)
@@ -866,7 +874,7 @@ def merged_service_areas(request):
                 kisumu_boundary = None
             
             # Clip the buffer to Kisumu boundary if available
-            if kisumu_boundary and kisumu_boundary.is_valid:
+            if kisumu_boundary:
                 print("Clipping buffer to Kisumu boundary")
                 try:
                     # Use prepared geometries for better performance

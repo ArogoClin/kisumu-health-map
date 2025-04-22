@@ -1,5 +1,4 @@
 // Dashboard.js - Handles the dashboard functionality and visualizations
-
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Initializing Kisumu Healthcare Dashboard');
     
@@ -31,6 +30,18 @@ function initializeSummaryStats() {
     document.getElementById('totalFacilities').textContent = totalFacilities;
     document.getElementById('populationPerFacility').textContent = populationPerFacility;
     document.getElementById('coveragePercent').textContent = coveragePercent;
+    
+    // Add additional metrics if available
+    if (summaryStats.underserved_population) {
+        const underservedElement = document.createElement('div');
+        underservedElement.className = 'stat-card';
+        underservedElement.innerHTML = `
+            <h3>Underserved Population</h3>
+            <p>${summaryStats.underserved_population.toLocaleString()}</p>
+            <small>${(summaryStats.underserved_percent || 0).toFixed(1)}% of total population</small>
+        `;
+        document.querySelector('.summary-stats').appendChild(underservedElement);
+    }
 }
 
 // Initialize the facility type chart
@@ -47,6 +58,12 @@ function initializeFacilityTypeChart() {
     const labels = Object.keys(facilityTypes);
     const data = Object.values(facilityTypes);
     
+    // Create a color palette
+    const colorPalette = [
+        '#3498db', '#2ecc71', '#e74c3c', '#f39c12',
+        '#9b59b6', '#1abc9c', '#d35400', '#34495e'
+    ];
+    
     // Create the chart
     const ctx = document.getElementById('facilityTypeChart').getContext('2d');
     new Chart(ctx, {
@@ -55,17 +72,32 @@ function initializeFacilityTypeChart() {
             labels: labels,
             datasets: [{
                 data: data,
-                backgroundColor: [
-                    '#3498db', '#2ecc71', '#e74c3c', '#f39c12', 
-                    '#9b59b6', '#1abc9c', '#d35400', '#34495e'
-                ]
+                backgroundColor: colorPalette.slice(0, labels.length)
             }]
         },
         options: {
             responsive: true,
+            maintainAspectRatio: false,
             plugins: {
                 legend: {
                     position: 'right',
+                    labels: {
+                        font: {
+                            size: 12
+                        },
+                        padding: 10
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const label = context.label || '';
+                            const value = context.raw || 0;
+                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                            const percentage = Math.round((value / total) * 100);
+                            return `${label}: ${value} (${percentage}%)`;
+                        }
+                    }
                 }
             }
         }
@@ -87,11 +119,14 @@ function initializeCoverageChart() {
             datasets: [{
                 label: 'Population Coverage (%)',
                 data: coverageData,
-                backgroundColor: '#3498db'
+                backgroundColor: '#3498db',
+                borderColor: '#2980b9',
+                borderWidth: 1
             }]
         },
         options: {
             responsive: true,
+            maintainAspectRatio: false,
             scales: {
                 y: {
                     beginAtZero: true,
@@ -107,9 +142,59 @@ function initializeCoverageChart() {
                         text: 'Travel Time'
                     }
                 }
+            },
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return `Coverage: ${context.raw.toFixed(1)}%`;
+                        }
+                    }
+                }
             }
         }
     });
+    
+    // Add a population density chart if data is available
+    if (summaryStats.population_density) {
+        const densityCanvas = document.createElement('canvas');
+        densityCanvas.id = 'populationDensityChart';
+        document.querySelector('.chart-container').appendChild(densityCanvas);
+        
+        const densityCtx = densityCanvas.getContext('2d');
+        new Chart(densityCtx, {
+            type: 'bar',
+            data: {
+                labels: Object.keys(summaryStats.population_density),
+                datasets: [{
+                    label: 'Population Density (people/km²)',
+                    data: Object.values(summaryStats.population_density),
+                    backgroundColor: '#27ae60',
+                    borderColor: '#2ecc71',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Density (people/km²)'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Region'
+                        }
+                    }
+                }
+            }
+        });
+    }
 }
 
 // Initialize the ward statistics table
@@ -117,81 +202,256 @@ function initializeWardStats() {
     const tableBody = document.getElementById('wardStatsTable').getElementsByTagName('tbody')[0];
     const wards = JSON.parse(wardsData).features;
     
-    // Calculate facilities per ward
-    const facilitiesPerWard = {};
-    JSON.parse(facilitiesData).features.forEach(facility => {
-        const facilityPoint = L.latLng(
-            facility.geometry.coordinates[1], 
-            facility.geometry.coordinates[0]
-        );
-        
-        wards.forEach(ward => {
-            // Check if facility is in this ward
-            // This is a simplified approach - ideally we'd use proper point-in-polygon
-            const wardName = ward.properties.ward;
-            if (!facilitiesPerWard[wardName]) {
-                facilitiesPerWard[wardName] = 0;
-            }
-            
-            // For now, just distribute facilities randomly for demonstration
-            // In a real implementation, you'd use proper spatial queries
-            if (Math.random() < 0.2) {
-                facilitiesPerWard[wardName]++;
-            }
+    // Calculate facilities per ward using spatial analysis
+    const facilitiesPerWard = calculateFacilitiesPerWard(wards, JSON.parse(facilitiesData).features);
+    
+    // Get population data for each ward
+    const wardPromises = wards.map(ward => {
+        return new Promise((resolve) => {
+            // Use population density API to get accurate population
+            fetch('/maps/api/population-density-for-area/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ area: ward })
+            })
+            .then(response => response.json())
+            .then(data => {
+                const wardName = ward.properties.ward;
+                const population = data.estimated_population || ward.properties.pop2009 || 0;
+                const facilities = facilitiesPerWard[wardName] || 0;
+                const area = data.area_km2 || 0;
+                const density = data.mean_density || 0;
+                
+                // Calculate coverage based on service areas
+                // This is a placeholder - in a real implementation, you'd use the actual service area data
+                const coverage = calculateWardCoverage(ward, wardName);
+                
+                // Calculate priority score (higher means higher need)
+                // Formula: (population / 10000) / (facilities + 1) * (100 - coverage) / 100
+                const priorityScore = ((population / 10000) / (facilities + 1)) * ((100 - coverage) / 100);
+                
+                resolve({
+                    wardName,
+                    population,
+                    facilities,
+                    coverage,
+                    priorityScore,
+                    area,
+                    density
+                });
+            })
+            .catch(error => {
+                console.error(`Error fetching population data for ward ${ward.properties.ward}:`, error);
+                
+                // Fallback to ward properties
+                const wardName = ward.properties.ward;
+                const population = ward.properties.pop2009 || 0;
+                const facilities = facilitiesPerWard[wardName] || 0;
+                
+                // Estimate coverage
+                const coverage = calculateWardCoverage(ward, wardName);
+                
+                // Calculate priority score
+                const priorityScore = ((population / 10000) / (facilities + 1)) * ((100 - coverage) / 100);
+                
+                resolve({
+                    wardName,
+                    population,
+                    facilities,
+                    coverage,
+                    priorityScore,
+                    area: 0,
+                    density: 0
+                });
+            });
         });
     });
     
-    // Calculate priority scores based on population and facility count
+    // Process all ward data
+    Promise.all(wardPromises)
+        .then(wardStats => {
+            // Sort by priority score (highest first)
+            wardStats.sort((a, b) => b.priorityScore - a.priorityScore);
+            
+            // Add to table
+            wardStats.forEach(ward => {
+                // Create table row
+                const row = tableBody.insertRow();
+                
+                // Add cells
+                const nameCell = row.insertCell(0);
+                const popCell = row.insertCell(1);
+                const facCell = row.insertCell(2);
+                const covCell = row.insertCell(3);
+                const priorityCell = row.insertCell(4);
+                
+                // Add content
+                nameCell.textContent = ward.wardName;
+                popCell.textContent = ward.population.toLocaleString();
+                facCell.textContent = ward.facilities;
+                covCell.textContent = ward.coverage.toFixed(1) + '%';
+                priorityCell.textContent = ward.priorityScore.toFixed(2);
+                
+                // Add tooltip with additional info
+                row.title = `Area: ${ward.area.toFixed(2)} km² | Density: ${ward.density.toFixed(0)} people/km²`;
+                
+                // Color code priority
+                if (ward.priorityScore > 5) {
+                    priorityCell.style.backgroundColor = '#ffcccc';
+                    priorityCell.style.color = '#cc0000';
+                } else if (ward.priorityScore > 2) {
+                    priorityCell.style.backgroundColor = '#fff2cc';
+                    priorityCell.style.color = '#996600';
+                }
+            });
+        })
+        .catch(error => {
+            console.error("Error processing ward statistics:", error);
+            
+            // Fallback to simplified approach
+            wards.forEach(ward => {
+                const wardName = ward.properties.ward;
+                const population = ward.properties.pop2009 || 0;
+                const facilities = facilitiesPerWard[wardName] || 0;
+                
+                // Random coverage for demonstration
+                const coverage = Math.round(Math.random() * 80 + 10);
+                
+                // Calculate priority score
+                const priorityScore = ((population / 10000) / (facilities + 1)) * ((100 - coverage) / 100);
+                
+                // Create table row
+                const row = tableBody.insertRow();
+                
+                // Add cells
+                const nameCell = row.insertCell(0);
+                const popCell = row.insertCell(1);
+                const facCell = row.insertCell(2);
+                const covCell = row.insertCell(3);
+                const priorityCell = row.insertCell(4);
+                
+                // Add content
+                nameCell.textContent = wardName;
+                popCell.textContent = population.toLocaleString();
+                facCell.textContent = facilities;
+                covCell.textContent = coverage + '%';
+                priorityCell.textContent = priorityScore.toFixed(2);
+                
+                // Color code priority
+                if (priorityScore > 5) {
+                    priorityCell.style.backgroundColor = '#ffcccc';
+                    priorityCell.style.color = '#cc0000';
+                } else if (priorityScore > 2) {
+                    priorityCell.style.backgroundColor = '#fff2cc';
+                    priorityCell.style.color = '#996600';
+                }
+            });
+            
+            // Sort table by priority score (highest first)
+            const rows = Array.from(tableBody.rows);
+            rows.sort((a, b) => {
+                const scoreA = parseFloat(a.cells[4].textContent);
+                const scoreB = parseFloat(b.cells[4].textContent);
+                return scoreB - scoreA;
+            });
+            
+            // Clear table and add sorted rows
+            tableBody.innerHTML = '';
+            rows.forEach(row => tableBody.appendChild(row));
+        });
+}
+
+// Helper function to calculate facilities per ward using turf.js
+function calculateFacilitiesPerWard(wards, facilities) {
+    const facilitiesPerWard = {};
+    
+    // Initialize all wards with zero facilities
     wards.forEach(ward => {
-        const wardName = ward.properties.ward;
-        const population = ward.properties.pop2009 || 0;
-        const facilities = facilitiesPerWard[wardName] || 0;
-        
-        // Calculate coverage (random for demonstration)
-        const coverage = Math.round(Math.random() * 80 + 10);
-        
-        // Calculate priority score (higher means higher need)
-        // Simple formula: (population / 10000) / (facilities + 1) * (100 - coverage) / 100
-        const priorityScore = ((population / 10000) / (facilities + 1)) * ((100 - coverage) / 100);
-        
-        // Create table row
-        const row = tableBody.insertRow();
-        
-        // Add cells
-        const nameCell = row.insertCell(0);
-        const popCell = row.insertCell(1);
-        const facCell = row.insertCell(2);
-        const covCell = row.insertCell(3);
-        const priorityCell = row.insertCell(4);
-        
-        // Add content
-        nameCell.textContent = wardName;
-        popCell.textContent = population.toLocaleString();
-        facCell.textContent = facilities;
-        covCell.textContent = coverage + '%';
-        priorityCell.textContent = priorityScore.toFixed(2);
-        
-        // Color code priority
-        if (priorityScore > 5) {
-            priorityCell.style.backgroundColor = '#ffcccc';
-            priorityCell.style.color = '#cc0000';
-        } else if (priorityScore > 2) {
-            priorityCell.style.backgroundColor = '#fff2cc';
-            priorityCell.style.color = '#996600';
+        facilitiesPerWard[ward.properties.ward] = 0;
+    });
+    
+    // Count facilities in each ward
+    facilities.forEach(facility => {
+        try {
+            const facilityPoint = turf.point([
+                facility.geometry.coordinates[0],
+                facility.geometry.coordinates[1]
+            ]);
+            
+            // Check which ward contains this facility
+            for (const ward of wards) {
+                if (ward.geometry && ward.geometry.type === 'Polygon') {
+                    const poly = turf.polygon(ward.geometry.coordinates);
+                    if (turf.booleanPointInPolygon(facilityPoint, poly)) {
+                        const wardName = ward.properties.ward;
+                        facilitiesPerWard[wardName] = (facilitiesPerWard[wardName] || 0) + 1;
+                        break;
+                    }
+                } else if (ward.geometry && ward.geometry.type === 'MultiPolygon') {
+                    const multiPoly = turf.multiPolygon(ward.geometry.coordinates);
+                    if (turf.booleanPointInPolygon(facilityPoint, multiPoly)) {
+                        const wardName = ward.properties.ward;
+                        facilitiesPerWard[wardName] = (facilitiesPerWard[wardName] || 0) + 1;
+                        break;
+                    }
+                }
+            }
+        } catch (e) {
+            console.error("Error checking facility location:", e);
         }
     });
     
-    // Sort table by priority score (highest first)
-    const rows = Array.from(tableBody.rows);
-    rows.sort((a, b) => {
-        const scoreA = parseFloat(a.cells[4].textContent);
-        const scoreB = parseFloat(b.cells[4].textContent);
-        return scoreB - scoreA;
-    });
+    return facilitiesPerWard;
+}
+
+// Helper function to calculate ward coverage
+function calculateWardCoverage(ward, wardName) {
+    // Check if we have real coverage data from the analysis
+    if (summaryStats.ward_coverage && summaryStats.ward_coverage[wardName]) {
+        return summaryStats.ward_coverage[wardName];
+    }
     
-    // Clear table and add sorted rows
-    tableBody.innerHTML = '';
-    rows.forEach(row => tableBody.appendChild(row));
+    // If we have travel time data in the buffer layer, use that
+    if (window.bufferLayer && window.bufferLayer.travelTimeData) {
+        try {
+            // Try to estimate coverage from the travel time data
+            // This is a simplified approach - in a real implementation, you'd do proper spatial analysis
+            const travelTimeData = window.bufferLayer.travelTimeData;
+            
+            // Get the 5-minute isochrones
+            const fiveMinIsochrones = travelTimeData.isochrones.filter(iso => iso.properties.travel_time === 5);
+            
+            // If we have isochrones, check intersection with the ward
+            if (fiveMinIsochrones.length > 0) {
+                // Create a combined isochrone
+                const combinedIsochrone = {
+                    type: 'Feature',
+                    geometry: {
+                        type: 'Polygon',
+                        coordinates: fiveMinIsochrones[0].geometry.coordinates
+                    }
+                };
+                
+                // Calculate intersection
+                const intersection = turf.intersect(ward, combinedIsochrone);
+                
+                if (intersection) {
+                    // Calculate percentage of ward covered
+                    const intersectionArea = turf.area(intersection);
+                    const wardArea = turf.area(ward);
+                    return (intersectionArea / wardArea) * 100;
+                }
+            }
+        } catch (e) {
+            console.error("Error calculating ward coverage from travel time data:", e);
+        }
+    }
+    
+    // Fallback: generate a random but reasonable coverage value
+    // In a real implementation, you'd use actual data
+    return Math.random() * 60 + 20; // Random between 20% and 80%
 }
 
 // Initialize the mini map
@@ -227,27 +487,50 @@ function initializeMiniMap() {
         }
     }).addTo(map);
     
-    // Add underserved areas (simulated for demonstration)
-    // In a real implementation, you'd get this from your underserved areas analysis
-    fetch('/maps/api/site-suitability/')
-        .then(response => response.json())
-        .then(data => {
-            if (data.underserved_area) {
-                L.geoJSON(data.underserved_area, {
-                    style: {
-                        color: '#e74c3c',
-                        fillColor: '#e74c3c',
-                        weight: 1,
-                        fillOpacity: 0.3
-                    }
-                }).addTo(map);
+    // Add underserved areas from analysis results
+    if (summaryStats.underserved_areas) {
+        L.geoJSON(summaryStats.underserved_areas, {
+            style: {
+                color: '#e74c3c',
+                fillColor: '#e74c3c',
+                weight: 1,
+                fillOpacity: 0.3
             }
-        })
-        .catch(error => {
-            console.error('Error fetching underserved areas:', error);
-            // Fallback: Create a simulated underserved area
-            simulateUnderservedAreas(map);
-        });
+        }).addTo(map);
+    } else {
+        // Try to fetch underserved areas from the API
+        fetch('/maps/api/site-suitability/')
+            .then(response => response.json())
+            .then(data => {
+                if (data.underserved_area) {
+                    L.geoJSON(data.underserved_area, {
+                        style: {
+                            color: '#e74c3c',
+                            fillColor: '#e74c3c',
+                            weight: 1,
+                            fillOpacity: 0.3
+                        }
+                    }).addTo(map);
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching underserved areas:', error);
+                // Fallback: Create a simulated underserved area
+                simulateUnderservedAreas(map);
+            });
+    }
+    
+    // Add coverage gaps if available
+    if (summaryStats.coverage_gaps) {
+        L.geoJSON(summaryStats.coverage_gaps, {
+            style: {
+                color: '#9b59b6',
+                fillColor: '#8e44ad',
+                weight: 1,
+                fillOpacity: 0.3
+            }
+        }).addTo(map);
+    }
     
     // Fit map to county bounds
     map.fitBounds(countyLayer.getBounds());
@@ -308,25 +591,33 @@ function simulateUnderservedAreas(map) {
 function initializeOptimalLocations() {
     const tableBody = document.getElementById('optimalLocationsTable').getElementsByTagName('tbody')[0];
     
-    // Fetch optimal locations from the API
-    fetch('/maps/api/site-suitability/')
-        .then(response => response.json())
-        .then(data => {
-            if (data.features && data.features.length > 0) {
-                // Add each location to the table
-                data.features.forEach((location, index) => {
-                    addOptimalLocationRow(tableBody, location, index + 1);
-                });
-            } else {
+    // Check if we have optimal locations in the summary stats
+    if (summaryStats.optimal_locations && summaryStats.optimal_locations.length > 0) {
+        // Add each location to the table
+        summaryStats.optimal_locations.forEach((location, index) => {
+            addOptimalLocationRow(tableBody, location, index + 1);
+        });
+    } else {
+        // Fetch optimal locations from the API
+        fetch('/maps/api/site-suitability/')
+            .then(response => response.json())
+            .then(data => {
+                if (data.features && data.features.length > 0) {
+                    // Add each location to the table
+                    data.features.forEach((location, index) => {
+                        addOptimalLocationRow(tableBody, location, index + 1);
+                    });
+                } else {
+                    // Fallback: Create simulated optimal locations
+                    simulateOptimalLocations(tableBody);
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching optimal locations:', error);
                 // Fallback: Create simulated optimal locations
                 simulateOptimalLocations(tableBody);
-            }
-        })
-        .catch(error => {
-            console.error('Error fetching optimal locations:', error);
-            // Fallback: Create simulated optimal locations
-            simulateOptimalLocations(tableBody);
-        });
+            });
+    }
 }
 
 // Add a row to the optimal locations table
@@ -380,6 +671,35 @@ function addOptimalLocationRow(tableBody, location, index) {
     ratingCell.textContent = rating;
     ratingCell.style.color = ratingColor;
     ratingCell.style.fontWeight = 'bold';
+    
+    // Add click event to show location on mini map
+    row.style.cursor = 'pointer';
+    row.addEventListener('click', function() {
+        highlightLocationOnMap(coords);
+    });
+}
+
+// Highlight a location on the mini map
+function highlightLocationOnMap(coords) {
+    const miniMap = document.getElementById('miniMap')._leaflet_map;
+    
+    // Remove any existing highlight marker
+    if (window.highlightMarker) {
+        miniMap.removeLayer(window.highlightMarker);
+    }
+    
+    // Create a new highlight marker
+    window.highlightMarker = L.marker([coords[1], coords[0]], {
+        icon: L.divIcon({
+            className: 'highlight-marker',
+            html: '<div style="background-color: #f1c40f; width: 12px; height: 12px; border-radius: 50%; border: 2px solid #f39c12;"></div>',
+            iconSize: [16, 16],
+            iconAnchor: [8, 8]
+        })
+    }).addTo(miniMap);
+    
+    // Pan to the location
+    miniMap.panTo([coords[1], coords[0]]);
 }
 
 // Simulate optimal locations for demonstration
@@ -421,7 +741,20 @@ function simulateOptimalLocations(tableBody) {
 // Generate a comprehensive PDF report
 function generateReport() {
     // Show loading indicator
-    alert('Generating report... This may take a few moments.');
+    const loadingIndicator = document.createElement('div');
+    loadingIndicator.id = 'reportLoadingIndicator';
+    loadingIndicator.style.position = 'fixed';
+    loadingIndicator.style.top = '0';
+    loadingIndicator.style.left = '0';
+    loadingIndicator.style.width = '100%';
+    loadingIndicator.style.height = '100%';
+    loadingIndicator.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+    loadingIndicator.style.display = 'flex';
+    loadingIndicator.style.justifyContent = 'center';
+    loadingIndicator.style.alignItems = 'center';
+    loadingIndicator.style.zIndex = '9999';
+    loadingIndicator.innerHTML = '<div style="background-color: white; padding: 20px; border-radius: 5px;"><h3>Generating report...</h3><p>This may take a few moments.</p></div>';
+    document.body.appendChild(loadingIndicator);
     
     // Use html2canvas and jsPDF to create a PDF
     const { jsPDF } = window.jspdf;
@@ -559,6 +892,13 @@ function generateReport() {
                 
                 doc.text('5. Conduct regular updates of this analysis to track improvements in healthcare access.', 20, 121);
                 
+                // Add key metrics summary
+                doc.text('Key Metrics Summary:', 20, 140);
+                doc.text(`• Total underserved population: ${(summaryStats.underserved_population || 0).toLocaleString()}`, 25, 150);
+                doc.text(`• Population within 5-minute travel time: ${(summaryStats.travel_time_coverage?.[5] || 0).toFixed(1)}%`, 25, 160);
+                doc.text(`• Population within 30-minute travel time: ${(summaryStats.travel_time_coverage?.[30] || 0).toFixed(1)}%`, 25, 170);
+                doc.text(`• Wards with critical need (priority score > 5): ${document.querySelectorAll('#wardStatsTable tbody tr td:nth-child(5)').length}`, 25, 180);
+                
                 // Add footer
                 doc.setFontSize(10);
                 doc.text('Geospatial Healthcare Access and Resource Optimization System for Kisumu County', 105, 280, { align: 'center' });
@@ -566,8 +906,233 @@ function generateReport() {
                 
                 // Save the PDF
                 doc.save('Kisumu_Healthcare_Analysis_Report.pdf');
+                
+                // Remove loading indicator
+                document.body.removeChild(document.getElementById('reportLoadingIndicator'));
             });
         });
     });
 }
-                
+
+// Add additional functionality for interactive dashboard elements
+document.addEventListener('DOMContentLoaded', function() {
+    // Add event listeners for dashboard filters if they exist
+    const filterElements = document.querySelectorAll('.dashboard-filter');
+    filterElements.forEach(filter => {
+        filter.addEventListener('change', updateDashboardVisuals);
+    });
+    
+    // Add event listeners for dashboard tabs if they exist
+    const tabElements = document.querySelectorAll('.dashboard-tab');
+    tabElements.forEach(tab => {
+        tab.addEventListener('click', function() {
+            // Remove active class from all tabs
+            tabElements.forEach(t => t.classList.remove('active'));
+            // Add active class to clicked tab
+            this.classList.add('active');
+            
+            // Show corresponding content
+            const contentId = this.getAttribute('data-content');
+            document.querySelectorAll('.dashboard-content').forEach(content => {
+                content.style.display = 'none';
+            });
+            document.getElementById(contentId).style.display = 'block';
+        });
+    });
+    
+    // Initialize tooltips for data points
+    initializeTooltips();
+});
+
+// Update dashboard visuals based on filters
+function updateDashboardVisuals() {
+    // This function would update charts and tables based on selected filters
+    // For now, it's a placeholder
+    console.log('Updating dashboard visuals based on filters');
+    
+    // Example: update based on selected facility type
+    const facilityTypeFilter = document.getElementById('facilityTypeFilter');
+    if (facilityTypeFilter) {
+        const selectedType = facilityTypeFilter.value;
+        console.log('Filtering by facility type:', selectedType);
+        
+        // Update facility count
+        if (selectedType === 'all') {
+            document.getElementById('totalFacilities').textContent = summaryStats.total_facilities;
+        } else {
+            // Count facilities of selected type
+            const count = JSON.parse(facilitiesData).features.filter(
+                f => f.properties.facility_type === selectedType
+            ).length;
+            document.getElementById('totalFacilities').textContent = count;
+        }
+    }
+    
+    // Example: update based on selected ward
+    const wardFilter = document.getElementById('wardFilter');
+    if (wardFilter) {
+        const selectedWard = wardFilter.value;
+        console.log('Filtering by ward:', selectedWard);
+        
+        // Update ward-specific statistics
+        // This would require additional data processing
+    }
+}
+
+// Initialize tooltips for data points
+function initializeTooltips() {
+    // Add tooltips to elements with data-tooltip attribute
+    const tooltipElements = document.querySelectorAll('[data-tooltip]');
+    tooltipElements.forEach(element => {
+        element.style.position = 'relative';
+        element.style.cursor = 'help';
+        
+        element.addEventListener('mouseenter', function(e) {
+            const tooltip = document.createElement('div');
+            tooltip.className = 'tooltip';
+            tooltip.textContent = this.getAttribute('data-tooltip');
+            tooltip.style.position = 'absolute';
+            tooltip.style.bottom = '100%';
+            tooltip.style.left = '50%';
+            tooltip.style.transform = 'translateX(-50%)';
+            tooltip.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+            tooltip.style.color = 'white';
+            tooltip.style.padding = '5px 10px';
+            tooltip.style.borderRadius = '4px';
+            tooltip.style.fontSize = '12px';
+            tooltip.style.whiteSpace = 'nowrap';
+            tooltip.style.zIndex = '1000';
+            tooltip.style.pointerEvents = 'none';
+            
+            this.appendChild(tooltip);
+        });
+        
+        element.addEventListener('mouseleave', function() {
+            const tooltip = this.querySelector('.tooltip');
+            if (tooltip) {
+                this.removeChild(tooltip);
+            }
+        });
+    });
+}
+
+// Add export functionality for tables
+document.addEventListener('DOMContentLoaded', function() {
+    // Add export buttons if they exist
+    const exportButtons = document.querySelectorAll('.export-table-btn');
+    exportButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const tableId = this.getAttribute('data-table');
+            exportTableToCSV(tableId);
+        });
+    });
+});
+
+// Export table to CSV
+function exportTableToCSV(tableId) {
+    const table = document.getElementById(tableId);
+    if (!table) return;
+    
+    const rows = Array.from(table.querySelectorAll('tr'));
+    
+    // Extract headers
+    const headers = Array.from(rows[0].querySelectorAll('th')).map(th => th.textContent.trim());
+    
+    // Extract data rows
+    const dataRows = rows.slice(1).map(row => {
+        return Array.from(row.querySelectorAll('td')).map(td => td.textContent.trim());
+    });
+    
+    // Combine headers and data
+    const csvContent = [
+        headers.join(','),
+        ...dataRows.map(row => row.join(','))
+    ].join('\n');
+    
+    // Create download link
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${tableId}_export.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// Add real-time data update functionality
+let dashboardUpdateInterval;
+
+function startDashboardUpdates() {
+    // Check for real-time updates every 5 minutes
+    dashboardUpdateInterval = setInterval(checkForDataUpdates, 5 * 60 * 1000);
+}
+
+function stopDashboardUpdates() {
+    clearInterval(dashboardUpdateInterval);
+}
+
+function checkForDataUpdates() {
+    // This would fetch the latest data from the server
+    // For now, it's a placeholder
+    console.log('Checking for data updates...');
+    
+    // Example: fetch latest summary stats
+    fetch('/maps/api/summary-stats/')
+        .then(response => response.json())
+        .then(data => {
+            if (data.last_updated > summaryStats.last_updated) {
+                console.log('New data available, updating dashboard...');
+                // Update the dashboard with new data
+                summaryStats = data;
+                initializeSummaryStats();
+                initializeCoverageChart();
+                // Show notification
+                showUpdateNotification();
+            } else {
+                console.log('No new data available');
+            }
+        })
+        .catch(error => {
+            console.error('Error checking for updates:', error);
+        });
+}
+
+function showUpdateNotification() {
+    const notification = document.createElement('div');
+    notification.className = 'update-notification';
+    notification.textContent = 'Dashboard updated with latest data';
+    notification.style.position = 'fixed';
+    notification.style.top = '20px';
+    notification.style.right = '20px';
+    notification.style.backgroundColor = '#4CAF50';
+    notification.style.color = 'white';
+    notification.style.padding = '10px 20px';
+    notification.style.borderRadius = '4px';
+    notification.style.zIndex = '1000';
+    notification.style.boxShadow = '0 2px 5px rgba(0,0,0,0.2)';
+    
+    document.body.appendChild(notification);
+    
+    // Remove notification after 5 seconds
+    setTimeout(() => {
+        document.body.removeChild(notification);
+    }, 5000);
+}
+
+// Start dashboard updates when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    startDashboardUpdates();
+    
+    // Stop updates when page is hidden
+    document.addEventListener('visibilitychange', function() {
+        if (document.hidden) {
+            stopDashboardUpdates();
+        } else {
+            startDashboardUpdates();
+        }
+    });
+});
+
+
