@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div style="max-width: 800px; margin: 0 auto; padding: 20px;">
+    <h1>Test Population Density API</h1>
+    
+    <div style="margin-bottom: 20px;">
+        <button id="testButton" class="btn btn-primary">Test API with Sample Data</button>
+        <div id="result" style="margin-top: 10px; padding: 10px; background: #f5f5f5; border-radius: 5px; display: none;"></div>
+    </div>
+    
+    <div>
+        <h3>Sample GeoJSON:</h3>
+        <pre style="background: #f5f5f5; padding: 10px; border-radius: 5px;">
+{
+  "area": {
+    "type": "Feature",
+    "geometry": {
+      "type": "Polygon",
+      "coordinates": [
+        [
+          [34.7, -0.1],
+          [34.8, -0.1],
+          [34.8, -0.2],
+          [34.7, -0.2],
+          [34.7, -0.1]
+        ]
+      ]
+    }
+  }
+}
+        </pre>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.getElementById('testButton').addEventListener('click', async function() {
+        const resultDiv = document.getElementById('result');
+        resultDiv.innerHTML = 'Testing API...';
+        resultDiv.style.display = 'block';
+        
+        try {
+            const response = await fetch('/maps/api/population-density-for-area/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    area: {
+                        type: "Feature",
+                        geometry: {
+                            type: "Polygon",
+                            coordinates: [
+                                [
+                                    [34.7, -0.1],
+                                    [34.8, -0.1],
+                                    [34.8, -0.2],
+                                    [34.7, -0.2],
+                                    [34.7, -0.1]
+                                ]
+                            ]
+                        }
+                    }
+                })
+            });
+            
+            const data = await response.json();
+            
+            resultDiv.innerHTML = '<h4>API Response:</h4><pre>' + JSON.stringify(data, null, 2) + '</pre>';
+            
+            if (response.ok) {
+                resultDiv.style.backgroundColor = '#d4edda';
+            } else {
+                resultDiv.style.backgroundColor = '#f8d7da';
+            }
+        } catch (error) {
+            resultDiv.innerHTML = '<h4>Error:</h4><pre>' + error.message + '</pre>';
+            resultDiv.style.backgroundColor = '#f8d7da';
+        }
+    });
+</script>
+{% endblock %}

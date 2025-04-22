@@ -1,0 +1,172 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Kisumu Health Facilities Map{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
+<style>
+    #map {
+        height: 600px;
+        width: 100%;
+    }
+    .map-controls {
+        background: white;
+        padding: 10px;
+        border-radius: 5px;
+        box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        margin-bottom: 10px;
+    }
+    .control-section {
+        margin-bottom: 10px;
+    }
+    .map-label {
+        background: rgba(255,255,255,0.7);
+        border: none;
+        box-shadow: none;
+        font-weight: bold;
+        font-size: 12px;
+        padding: 2px 4px;
+        border-radius: 3px;
+        white-space: nowrap;
+    }
+    .legend {
+        background: white;
+        padding: 10px;
+        border-radius: 5px;
+        box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    .facility-popup {
+        max-width: 300px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1>Kisumu Health Facilities Map</h1>
+    
+    <div class="row">
+        <div class="col-md-3">
+            <!-- Map Controls -->
+            <div class="map-controls">
+                <!-- Administrative Boundaries -->
+                <div class="control-section">
+                    <h5>Administrative Boundaries</h5>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="countyToggle" checked>
+                        <label class="form-check-label" for="countyToggle">County Boundary</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="constituencyToggle" checked>
+                        <label class="form-check-label" for="constituencyToggle">Constituencies</label>
+                    </div>
+                    <div class="form-check ml-4">
+                        <input class="form-check-input" type="checkbox" id="constituencyLabelsToggle">
+                        <label class="form-check-label" for="constituencyLabelsToggle">Show Labels</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="wardToggle" checked>
+                        <label class="form-check-label" for="wardToggle">Wards</label>
+                    </div>
+                    <div class="form-check ml-4">
+                        <input class="form-check-input" type="checkbox" id="wardLabelsToggle">
+                        <label class="form-check-label" for="wardLabelsToggle">Show Labels</label>
+                    </div>
+                </div>
+                
+                <!-- Health Facilities -->
+                <div class="control-section">
+                    <h5>Health Facilities</h5>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="facilitiesToggle" checked>
+                        <label class="form-check-label" for="facilitiesToggle">Show Facilities</label>
+                    </div>
+                    
+                    <div id="facilityControls" style="margin-top: 10px;">
+                        <div class="form-group">
+                            <label for="facilityTypeFilter">Filter by Type:</label>
+                            <select class="form-control form-control-sm" id="facilityTypeFilter">
+                                <option value="all">All Types</option>
+                                <option value="Hospital">Hospitals</option>
+                                <option value="Health Center">Health Centers</option>
+                                <option value="Dispensary">Dispensaries</option>
+                                <option value="Clinic">Clinics</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="serviceAreaToggle">
+                            <label class="form-check-label" for="serviceAreaToggle">Show Service Areas (5km)</label>
+                        </div>
+                        
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="underservedToggle">
+                            <label class="form-check-label" for="underservedToggle">Identify Underserved Areas</label>
+                        </div>
+                        
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="coverageGapToggle">
+                            <label class="form-check-label" for="coverageGapToggle">Show Coverage Gaps</label>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Roads -->
+                <div class="control-section">
+                    <h5>Roads</h5>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="roadsToggle">
+                        <label class="form-check-label" for="roadsToggle">Show Roads</label>
+                    </div>
+                    
+                    <div id="roadControls" style="margin-top: 10px; display: none;">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="roadDensityToggle">
+                            <label class="form-check-label" for="roadDensityToggle">Show Road Density</label>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Population Density -->
+                <div class="control-section">
+                    <h5>Population Density</h5>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="populationDensityToggle">
+                        <label class="form-check-label" for="populationDensityToggle">Show Population Density</label>
+                    </div>
+                    
+                    <div id="populationControls" style="margin-top: 10px; display: none;">
+                        <div class="form-group">
+                            <label for="datasetSelect">Dataset:</label>
+                            <select class="form-control form-control-sm" id="datasetSelect">
+                                <option value="">Loading datasets...</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-9">
+            <!-- Map Container -->
+            <div id="map"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<!-- Leaflet and plugins -->
+<!-- Leaflet -->
+<script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+<!-- Test map -->
+<script src="{% static 'maps/js/test-map.js' %}"></script>
+
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+<script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+
+
+
+{% endblock %}

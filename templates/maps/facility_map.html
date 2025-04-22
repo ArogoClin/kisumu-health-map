@@ -1,0 +1,288 @@
+{% extends 'base.html' %}
+
+{% load static %}
+
+{% block content %}
+<div class="map-container">
+    <div class="sidebar">
+        <h3>Kisumu Health Facilities</h3>
+        <div class="layer-control">
+            <h4>Map Tools</h4>
+            <div class="tool-toggles">
+                <label><input type="checkbox" id="measurementTool"> Enable Distance Measurement</label>
+            </div>
+            
+            <h4>Service Area Analysis</h4>
+            <div class="service-area-toggles">
+                <label><input type="checkbox" id="bufferToggle"> 5km Service Areas</label>
+                <label><input type="checkbox" id="underservedToggle"> Underserved Areas</label>
+                <label><input type="checkbox" id="coverageGapToggle"> Coverage Gaps</label>
+            </div>
+
+            
+            
+            <h4>Analysis Tools</h4>
+            <div class="analysis-tools">
+                <button id="analyzeNeedsBtn" class="analysis-btn">Analyze Healthcare Needs</button>
+                <button id="resetAnalysisBtn" class="analysis-btn" style="margin-top: 5px; background-color: #e74c3c;">Reset Analysis</button>
+                <button id="generateReportBtn" class="analysis-btn" style="margin-top: 5px; background-color: #27ae60; display: none;">Generate Report</button>
+                <button id="debugBtn" style="position: fixed; bottom: 10px; right: 10px; z-index: 1000; background: #f44336; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; display: none;">Debug Layers</button>
+                <button id="analyzeSuitabilityBtn" class="analysis-btn" style="margin-top: 5px; background-color: #3f51b5;">Analyze Optimal Locations</button>
+
+                <div id="analysisStatus" style="margin-top: 5px; font-size: 0.9em; display: none;"></div>
+            </div>
+
+            <h4>Reports & Dashboard</h4>
+            <div class="dashboard-link">
+                <a href="{% url 'healthcare_dashboard' %}" class="dashboard-btn">View Healthcare Dashboard</a>
+            </div>
+
+            <h4>Map Layers</h4>
+            <div class="layer-toggles">
+                <label><input type="checkbox" checked id="countyLayer"> County Boundary</label>
+                <label><input type="checkbox" checked id="constituencyLayer"> Constituencies</label>
+                <label><input type="checkbox" checked id="wardLayer"> Wards</label>
+                <label><input type="checkbox" checked id="facilityLayer"> Health Facilities</label>
+            </div>
+            <h4>Labels</h4>
+            <div class="label-toggles">
+                <label><input type="checkbox" id="constituencyLabels"> Show Constituency Names</label>
+                <label><input type="checkbox" id="wardLabels"> Show Ward Names</label>
+            </div>
+            <h4>Population Data</h4>
+            <div class="population-toggles">
+                <label><input type="checkbox" id="populationDensityToggle"> Show Population Density</label>
+                <div id="populationControls" style="display: none; margin-top: 10px;">
+                    {% if population_datasets|length > 1 %}
+                        <label for="datasetSelect">Dataset:</label>
+                        <select id="datasetSelect">
+                            {% for dataset in population_datasets %}
+                                <option value="{{ dataset.id }}">{{ dataset.name }} ({{ dataset.year }})</option>
+                            {% endfor %}
+                        </select>
+                    {% else %}
+                        {% for dataset in population_datasets %}
+                            <input type="hidden" id="datasetSelect" value="{{ dataset.id }}">
+                            <div><strong>Dataset:</strong> {{ dataset.name }} ({{ dataset.year }})</div>
+                        {% endfor %}
+                    {% endif %}
+                    <div class="density-legend" id="densityLegend" style="margin-top: 10px;"></div>
+                    <button id="resetDensityScale" style="margin-top: 5px; padding: 2px 8px; font-size: 0.9em;">Reset Density Scale</button>
+                </div>
+            </div>
+        </div>
+        <div class="legend">
+            <h4>Legend</h4>
+        </div>
+    </div>
+
+    <div id="map"></div>
+</div>
+{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-sidebar-v2@3.2.3/css/leaflet-sidebar.min.css" />
+
+<style>
+    .map-container {
+        display: flex;
+        height: 90vh;
+    }
+   
+    .sidebar {
+        width: 300px;
+        padding: 20px;
+        background: #fff;
+        box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        z-index: 1000;
+        overflow-y: auto;
+    }
+   
+    #map {
+        flex-grow: 1;
+        height: 100%;
+    }
+   
+    .layer-control {
+        margin: 20px 0;
+    }
+   
+    .layer-toggles label, .label-toggles label, .tool-toggles label, .service-area-toggles label {
+        display: block;
+        margin: 10px 0;
+        cursor: pointer;
+    }
+   
+    .legend {
+        padding: 10px;
+        background: #f8f9fa;
+        border-radius: 4px;
+    }
+
+    .facility-popup {
+        max-width: 300px;
+    }
+
+    .facility-popup h3 {
+        margin: 0 0 10px 0;
+        color: #2c3e50;
+    }
+
+    .map-label {
+        background: transparent;
+        border: none;
+        color: #2c3e50;
+        font-weight: bold;
+        text-shadow: 1px 1px 2px white;
+        text-align: center;
+    }
+
+    .population-toggles {
+        margin: 15px 0;
+        padding: 5px 0;
+    }
+   
+    #populationControls {
+        background: #f8f9fa;
+        padding: 8px;
+        border-radius: 4px;
+    }
+   
+    #datasetSelect {
+        width: 100%;
+        padding: 5px;
+        margin-bottom: 5px;
+        border: 1px solid #ddd;
+        border-radius: 3px;
+    }
+   
+    .density-legend {
+        background: white;
+        padding: 8px;
+        border-radius: 4px;
+        border: 1px solid #ddd;
+        font-size: 0.9em;
+    }
+
+    .analysis-tools {
+        margin: 15px 0;
+    }
+   
+    .analysis-btn {
+        width: 100%;
+        padding: 8px;
+        background-color: #3498db;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: bold;
+    }
+   
+    .analysis-btn:hover {
+        background-color: #2980b9;
+    }
+   
+    .priority-scale {
+        height: 10px;
+        background: linear-gradient(to right, #90caf9, #a5d6a7, #ce93d8, #ffcc80, #ff8a80);
+        border-radius: 5px;
+        margin: 5px 0;
+    }
+   
+    .priority-marker {
+        position: relative;
+        height: 15px;
+    }
+   
+    .priority-marker-pointer {
+        position: absolute;
+        transform: translateX(-50%);
+        top: 0;
+    }
+    
+    .service-area-toggles {
+        margin: 15px 0;
+        padding: 5px 0;
+    }
+
+    .rank-marker {
+        background: transparent;
+        border: none;
+    }
+    
+    .suitability-popup {
+        max-width: 300px;
+    }
+    
+    .suitability-popup h3 {
+        margin: 0 0 10px 0;
+        color: #2c3e50;
+    }
+    
+    .select-location-btn {
+        background-color: #3f51b5;
+        color: white;
+        border: none;
+        padding: 5px 10px;
+        border-radius: 3px;
+        cursor: pointer;
+        margin-top: 10px;
+        width: 100%;
+    }
+    
+    .select-location-btn:hover {
+        background-color: #303f9f;
+    }
+
+    .dashboard-btn {
+        display: block;
+        width: 100%;
+        padding: 8px;
+        background-color: #27ae60;
+        color: white;
+        text-align: center;
+        border-radius: 4px;
+        text-decoration: none;
+        font-weight: bold;
+        margin-top: 10px;
+    }
+    
+    .dashboard-btn:hover {
+        background-color: #219653;
+        color: white;
+    }
+    
+</style>
+{% endblock %}
+
+{% block scripts %}
+<!-- External libraries -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+
+<!-- Data from Django -->
+<script>
+    // Pass data from Django to JavaScript
+    const countyData = {{ county|safe }};
+    const constituenciesData = {{ constituencies|safe }};
+    const wardsData = {{ wards|safe }};
+    const facilitiesData = {{ facilities|safe }};
+</script>
+
+<!-- Application modules -->
+<script src="{% static 'map/js/map-init.js' %}"></script>
+<script src="{% static 'map/js/map-layers.js' %}"></script>
+<script src="{% static 'map/js/map-tools.js' %}"></script>
+<script src="{% static 'map/js/service-areas.js' %}"></script>
+<script src="{% static 'map/js/population-density.js' %}"></script>
+<script src="{% static 'map/js/healthcare-analysis.js' %}"></script>
+<script src="{% static 'map/js/report-generator.js' %}"></script>
+<script src="{% static 'map/js/travel-time.js' %}"></script>
+<script src="{% static 'map/js/site-suitability.js' %}"></script>
+<script src="{% static 'map/js/main.js' %}"></script>
+{% endblock %}
