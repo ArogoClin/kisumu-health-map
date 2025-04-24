@@ -71,6 +71,7 @@ class KenyaWard(models.Model):
     geom = models.MultiPolygonField(srid=4326)
     uid = models.CharField(max_length=100)
     pop2009 = models.IntegerField()
+    pop2019 = models.IntegerField(null=True, blank=True)
 
     def __str__(self):
         return self.ward

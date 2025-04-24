@@ -54,7 +54,7 @@ def facility_map(request):
 
     wards_json = serialize('geojson', kisumu_wards,
         geometry_field='geom',
-        fields=('ward', 'pop2009', 'subcounty')
+        fields=('ward', 'pop2019', 'subcounty')
     )
 
     facilities_json = serialize('geojson', selected_facilities,
@@ -396,9 +396,29 @@ def site_suitability_analysis(request):
         print("Starting site suitability analysis...")
         start_time = time.time()
         
+        # Get facility type from request (optional)
+        target_facility_type = request.GET.get('facility_type', 'Health Centre')
+        print(f"Target facility type: {target_facility_type}")
+        
+        # Define buffer sizes for different facility types (in km)
+        buffer_sizes = {
+            'Hospital': 10.0,                  # Larger radius for hospitals
+            'Health Centre': 7.0,              # Medium radius for health centers
+            'Medical Clinic': 5.0,             # Standard radius for clinics
+            'Medical Center': 6.0,             # Medium radius for medical centers
+            'Faith Based Facility': 6.0,       # Medium radius
+            'Stand-alone': 3.0,                # Smaller radius for standalone facilities
+            'Other': 5.0                       # Default radius
+        }
+        
+        # Get buffer size for target facility type
+        target_buffer_size = buffer_sizes.get(target_facility_type, 5.0)
+        print(f"Using {target_buffer_size}km buffer for analysis")
+        
         # Get existing facilities
         existing_facilities = HealthCareFacility.objects.exclude(
-            facility_type__in=['Dispensary', 'Pharmacy', 'VCT Centre (Stand-Alone)', 'Laboratory (Stand-alone)', 'Nursing Home', 'Health Programme',  ]
+            facility_type__in=['Dispensary', 'Pharmacy', 'VCT Centre (Stand-Alone)', 
+                              'Laboratory (Stand-alone)', 'Nursing Home', 'Health Programme']
         )
         
         # Get population density data
@@ -415,24 +435,27 @@ def site_suitability_analysis(request):
         
         print(f"Processing {existing_facilities.count()} existing facilities...")
         
-        # Create 5km buffers around existing facilities
+        # Create buffers around existing facilities based on their type
         facility_buffers = []
         for facility in existing_facilities:
             try:
                 # Get facility point as shapely geometry
                 facility_point = shape(json.loads(facility.location.json))
                 
-                # Create buffer (similar to your existing code)
+                # Get buffer size based on facility type
+                facility_type = facility.facility_type
+                buffer_size_km = buffer_sizes.get(facility_type, 5.0)
+                
+                # Create buffer
                 lat = facility_point.y
                 lon = facility_point.x
                 
-                # Calculate approximate degrees for 5km buffer
+                # Calculate approximate degrees for buffer
                 lat_km_per_degree = 111.0
                 lon_km_per_degree = 111.0 * np.cos(np.radians(lat))
                 
-                # Convert 5km to degrees
-                lat_buffer = 5.0 / lat_km_per_degree
-                lon_buffer = 5.0 / lon_km_per_degree
+                # Convert buffer size to degrees
+                lat_buffer = buffer_size_km / lat_km_per_degree
                 
                 # Create buffer
                 buffer = Point(lon, lat).buffer(lat_buffer)
@@ -447,6 +470,7 @@ def site_suitability_analysis(request):
                 
                 if buffer.is_valid:
                     facility_buffers.append(buffer)
+                    print(f"Created {buffer_size_km}km buffer for {facility.name} ({facility_type})")
             except Exception as e:
                 print(f"Error creating buffer for facility: {str(e)}")
                 continue
@@ -457,7 +481,25 @@ def site_suitability_analysis(request):
         if not facility_buffers:
             return JsonResponse({'error': 'No valid facility buffers could be created'}, status=500)
         
-        merged_buffer = unary_union(facility_buffers)
+        # Merge buffers in batches to avoid memory issues
+        if len(facility_buffers) > 100:
+            print("Large number of buffers, merging in batches")
+            batch_size = 50
+            merged_buffer = None
+            
+            for i in range(0, len(facility_buffers), batch_size):
+                batch = facility_buffers[i:i+batch_size]
+                batch_merged = unary_union(batch)
+                
+                if merged_buffer is None:
+                    merged_buffer = batch_merged
+                else:
+                    merged_buffer = unary_union([merged_buffer, batch_merged])
+                
+                print(f"Merged batch {i//batch_size + 1}/{(len(facility_buffers)+batch_size-1)//batch_size}")
+        else:
+            merged_buffer = unary_union(facility_buffers)
+        
         print("Merged all facility buffers")
         
         # Find areas outside the buffer (underserved areas)
@@ -467,15 +509,37 @@ def site_suitability_analysis(request):
         # If there are no underserved areas, return early
         if underserved_areas.is_empty:
             return JsonResponse({
-                'message': 'No underserved areas found. The entire county is within 5km of an existing facility.',
+                'message': f'No underserved areas found. The entire county is within service range of existing facilities.',
                 'processing_time': time.time() - start_time
             })
+        
+        # Get all wards for later analysis
+        kisumu_wards = list(KenyaWard.objects.filter(county__iexact='KISUMU'))
+        ward_geometries = {}
+        ward_populations = {}
+        
+        for ward in kisumu_wards:
+            ward_geometries[ward.ward] = shape(json.loads(ward.geom.json))
+            ward_populations[ward.ward] = ward.pop2009 or 0
+        
+        print(f"Loaded {len(kisumu_wards)} wards with population data")
         
         # Now analyze population density in underserved areas
         print("Analyzing population density in underserved areas...")
         
         # Create a grid of potential facility locations
-        grid_size = 0.01  # Approximately 1km grid
+        # Adjust grid size based on county size
+        county_area_km2 = kisumu_boundary.area * (111 * 111)  # Rough conversion to km²
+        
+        # Adaptive grid size - smaller grid for smaller counties
+        if county_area_km2 < 1000:
+            grid_size = 0.005  # ~500m grid for small counties
+        elif county_area_km2 < 3000:
+            grid_size = 0.008  # ~800m grid for medium counties
+        else:
+            grid_size = 0.01   # ~1km grid for large counties
+        
+        print(f"Using grid size of {grid_size} degrees (~{grid_size*111:.1f}km)")
         
         # Get bounds of underserved areas
         minx, miny, maxx, maxy = underserved_areas.bounds
@@ -508,8 +572,34 @@ def site_suitability_analysis(request):
         
         print(f"Processing {len(grid_points)} points in {num_batches} batches of {batch_size}")
         
+        # Calculate county-wide statistics for normalization
+        county_pop_total = sum(ward_populations.values())
+        print(f"Total county population (2009): {county_pop_total}")
+        
         # Open the raster file once for all points
         with rasterio.open(population_dataset.raster_file.path) as src:
+            # Get county-wide population density statistics
+            county_density_stats = {}
+            try:
+                # Create a mask for the county
+                county_image, county_transform = rasterio.mask.mask(src, [kisumu_boundary], crop=True, all_touched=True)
+                valid_county_data = county_image[0][~np.isnan(county_image[0]) & (county_image[0] > 0)]
+                
+                if len(valid_county_data) > 0:
+                    county_density_stats = {
+                        'min': float(np.min(valid_county_data)),
+                        'max': float(np.max(valid_county_data)),
+                        'mean': float(np.mean(valid_county_data)),
+                        'median': float(np.median(valid_county_data)),
+                        'p75': float(np.percentile(valid_county_data, 75)),
+                        'p90': float(np.percentile(valid_county_data, 90))
+                    }
+                    print(f"County density stats: min={county_density_stats['min']:.1f}, "
+                          f"max={county_density_stats['max']:.1f}, mean={county_density_stats['mean']:.1f}")
+            except Exception as e:
+                print(f"Error calculating county density stats: {str(e)}")
+                county_density_stats = {'max': 1000, 'mean': 500}  # Fallback values
+            
             for batch_idx in range(num_batches):
                 start_idx = batch_idx * batch_size
                 end_idx = min((batch_idx + 1) * batch_size, len(grid_points))
@@ -519,20 +609,16 @@ def site_suitability_analysis(request):
                 
                 for point in batch_points:
                     try:
-                        # Create a small buffer around the point for raster analysis
-                        # This helps avoid the "inhomogeneous shape" error
-                        analysis_buffer = point.buffer(0.001)  # Small buffer for analysis
-                        
-                        # Create a 5km service area around this point
+                        # Create a service area around this point based on target facility type
                         lat = point.y
                         lon = point.x
                         
-                        # Calculate approximate degrees for 5km buffer
+                        # Calculate approximate degrees for buffer
                         lat_km_per_degree = 111.0
                         lon_km_per_degree = 111.0 * np.cos(np.radians(lat))
                         
-                        # Convert 5km to degrees
-                        lat_buffer = 5.0 / lat_km_per_degree
+                        # Convert target buffer size to degrees
+                        lat_buffer = target_buffer_size / lat_km_per_degree
                         
                         # Create buffer
                         service_area = Point(lon, lat).buffer(lat_buffer)
@@ -562,6 +648,7 @@ def site_suitability_analysis(request):
                             if len(valid_data) > 0:
                                 # Calculate mean density
                                 mean_density = float(np.mean(valid_data))
+                                max_density = float(np.max(valid_data))
                                 
                                 # Calculate area in square kilometers
                                 wgs84 = pyproj.CRS('EPSG:4326')
@@ -580,22 +667,21 @@ def site_suitability_analysis(request):
                                 # Find ward this point is in
                                 ward = None
                                 ward_obj = None
-                                for w in KenyaWard.objects.filter(county__iexact='KISUMU'):
-                                    ward_geom = shape(json.loads(w.geom.json))
+                                ward_pop = 0
+                                
+                                for ward_name, ward_geom in ward_geometries.items():
                                     if point.within(ward_geom):
-                                        ward = w.ward
-                                        ward_obj = w
+                                        ward = ward_name
+                                        ward_pop = ward_populations.get(ward_name, 0)
                                         break
                                 
-                                # Calculate additional metrics
-                                # 1. Population density score (higher is better)
-                                density_score = min(mean_density / 1000, 1.0)  # Normalize to 0-1
+                                # Calculate ward coverage and population metrics
+                                ward_coverage_percent = 0
+                                ward_pop_density = 0
                                 
-                                # 2. Existing coverage score (lower coverage is better for new facilities)
-                                coverage_score = 0.0
-                                if ward_obj:
-                                    # Calculate how much of the ward is already covered
-                                    ward_geom = shape(json.loads(ward_obj.geom.json))
+                                if ward:
+                                    # Calculate how much of the ward is already covered by existing facilities
+                                    ward_geom = ward_geometries[ward]
                                     ward_area_utm = transform(transform_fn, ward_geom)
                                     ward_area_km2 = ward_area_utm.area / 1000000
                                     
@@ -606,16 +692,59 @@ def site_suitability_analysis(request):
                                     
                                     # Calculate percentage covered
                                     if ward_area_km2 > 0:
-                                        coverage_percent = (coverage_km2 / ward_area_km2) * 100
-                                        # Invert so lower coverage gets higher score
-                                        coverage_score = 1.0 - min(coverage_percent / 100, 1.0)
+                                        ward_coverage_percent = (coverage_km2 / ward_area_km2) * 100
+                                        ward_pop_density = ward_pop / ward_area_km2
                                 
-                                # 3. Calculate composite score (weighted average)
-                                # Population served is the primary factor (60%)
-                                # Low existing coverage is secondary (30%)
-                                # Population density is tertiary (10%)
-                                population_score = min(population_served / 50000, 1.0)  # Normalize to 0-1
-                                composite_score = (0.7 * population_score) + (0.4 * coverage_score) + (0.2 * density_score)
+                                # Calculate scores for different factors
+                                
+                                # 1. Population density score (0-1)
+                                # Normalize against county-wide statistics
+                                density_max = county_density_stats.get('max', 1000)
+                                density_score = min(mean_density / (density_max * 0.7), 1.0)
+                                
+                                # 2. Ward coverage score (0-1)
+                                # Lower coverage is better for new facilities
+                                coverage_score = 1.0 - min(ward_coverage_percent / 100, 1.0)
+                                
+                                # 3. Population served score (0-1)
+                                # Normalize based on expected population for facility type
+                                expected_pop = {
+                                    'Hospital': 100000,
+                                    'Health Centre': 50000,
+                                    'Medical Clinic': 30000,
+                                    'Medical Center': 40000,
+                                    'Faith Based Facility': 40000,
+                                    'Stand-alone': 20000,
+                                    'Other': 30000
+                                }
+                                target_pop = expected_pop.get(target_facility_type, 30000)
+                                population_score = min(population_served / target_pop, 1.0)
+                                
+                                # 4. Ward population score (0-1)
+                                # Higher ward population is better
+                                ward_pop_score = min(ward_pop / 50000, 1.0)
+                                
+                                # 5. Accessibility score (0-1)
+                                # Areas with higher max density might indicate urban centers with better access
+                                accessibility_score = min(max_density / density_max, 1.0)
+                                
+                                # Calculate composite score with weighted factors
+                                # Weights should sum to 1.0
+                                weights = {
+                                    'population_served': 0.35,  # Population served is most important
+                                    'coverage': 0.25,          # Low existing coverage is important
+                                    'ward_population': 0.15,   # Ward population is moderately important
+                                    'density': 0.15,           # Population density is moderately important
+                                    'accessibility': 0.10      # Accessibility is least important
+                                }
+                                
+                                composite_score = (
+                                    (weights['population_served'] * population_score) +
+                                    (weights['coverage'] * coverage_score) +
+                                    (weights['ward_population'] * ward_pop_score) +
+                                    (weights['density'] * density_score) +
+                                    (weights['accessibility'] * accessibility_score)
+                                )
                                 
                                 # Score this location
                                 scored_locations.append({
@@ -625,11 +754,18 @@ def site_suitability_analysis(request):
                                         'population_served': population_served,
                                         'area_km2': area_km2,
                                         'mean_density': mean_density,
+                                        'max_density': max_density,
                                         'ward': ward,
-                                        'density_score': density_score,
-                                        'coverage_score': coverage_score,
-                                        'population_score': population_score,
-                                        'composite_score': composite_score
+                                        'ward_population': ward_pop,
+                                        'ward_coverage_percent': round(ward_coverage_percent, 1),
+                                        'density_score': round(density_score, 2),
+                                        'coverage_score': round(coverage_score, 2),
+                                        'population_score': round(population_score, 2),
+                                        'ward_pop_score': round(ward_pop_score, 2),
+                                        'accessibility_score': round(accessibility_score, 2),
+                                        'composite_score': round(composite_score, 2),
+                                        'facility_type': target_facility_type,
+                                        'buffer_km': target_buffer_size
                                     }
                                 })
                         except Exception as e:
@@ -641,15 +777,27 @@ def site_suitability_analysis(request):
         
         # Sort locations by composite score (descending)
         scored_locations.sort(key=lambda x: x['properties']['composite_score'], reverse=True)
-
+        
         # 1. Select the top location overall
         distributed_locations = []
         if scored_locations:
             distributed_locations.append(scored_locations[0])
             
             # 2. Define a minimum distance between recommended facilities (in degrees)
-            # ~5km in degrees is roughly 0.045 degrees
-            min_distance = 0.045
+            # Adjust minimum distance based on facility type
+            min_distance_km = {
+                'Hospital': 15.0,
+                'Health Centre': 10.0,
+                'Medical Clinic': 7.0,
+                'Medical Center': 8.0,
+                'Faith Based Facility': 8.0,
+                'Stand-alone': 5.0,
+                'Other': 7.0
+            }.get(target_facility_type, 7.0)
+            
+            # Convert km to degrees (approximate)
+            min_distance = min_distance_km / 111.0
+            print(f"Using minimum distance of {min_distance_km}km between recommended facilities")
             
             # 3. Select remaining locations ensuring minimum distance
             remaining_candidates = scored_locations[1:]
@@ -679,7 +827,7 @@ def site_suitability_analysis(request):
                     # If we checked all candidates and none were suitable,
                     # reduce the minimum distance requirement
                     min_distance *= 0.9
-                    print(f"Reducing minimum distance to {min_distance} degrees")
+                    print(f"Reducing minimum distance to {min_distance*111:.1f}km")
                     
                     # If minimum distance gets too small, just take the highest scored remaining
                     if min_distance < 0.01:  # ~1km
@@ -690,6 +838,10 @@ def site_suitability_analysis(request):
         # Use the distributed locations instead of just the top 20
         top_locations = distributed_locations[:20]
         
+        # Add rank to each location
+        for i, location in enumerate(top_locations):
+            location['properties']['rank'] = i + 1
+        
         # Create GeoJSON for underserved areas
         underserved_geojson = mapping(underserved_areas)
         
@@ -697,12 +849,26 @@ def site_suitability_analysis(request):
         processing_time = time.time() - start_time
         print(f"Site suitability analysis completed in {processing_time:.2f} seconds")
         
+        # Create summary statistics for the results
+        summary = {
+            'facility_type': target_facility_type,
+            'buffer_size_km': target_buffer_size,
+            'total_locations_analyzed': len(scored_locations),
+            'top_location_score': top_locations[0]['properties']['composite_score'] if top_locations else 0,
+            'average_score': sum(loc['properties']['composite_score'] for loc in top_locations) / len(top_locations) if top_locations else 0,
+            'total_population_served': sum(loc['properties']['population_served'] for loc in top_locations) if top_locations else 0,
+            'wards_covered': len(set(loc['properties']['ward'] for loc in top_locations if loc['properties']['ward'])) if top_locations else 0,
+            'processing_time_seconds': processing_time
+        }
+        
         return JsonResponse({
             'type': 'FeatureCollection',
             'features': top_locations,
-            'underserved_area': underserved_geojson,
-            'total_locations_analyzed': len(scored_locations),
-            'processing_time': processing_time
+            'underserved_area': {
+                'type': 'Feature',
+                'geometry': underserved_geojson
+            },
+            'summary': summary
         })
     
     except Exception as e:
@@ -714,8 +880,9 @@ def site_suitability_analysis(request):
         }, status=500)
 
 
+
 def healthcare_dashboard(request):
-    """View for the healthcare dashboard"""
+    """View for the healthcare dashboard with real data calculations"""
     # Get Kisumu data
     kisumu_county = KenyaCounty.objects.get(county__iexact='KISUMU')
     kisumu_constituencies = KenyaConstituency.objects.filter(county_nam__iexact='KISUMU')
@@ -723,62 +890,284 @@ def healthcare_dashboard(request):
     
     # Get selected facilities in Kisumu
     selected_facilities = HealthCareFacility.objects.exclude(
-        facility_type__in=['Dispensary', 'Pharmacy', 'VCT Centre (Stand-Alone)', 'Laboratory (Stand-alone)', 'Nursing Home', 'Health Programme',  ]
+        facility_type__in=['Dispensary', 'Pharmacy', 'VCT Centre (Stand-Alone)',
+                          'Laboratory (Stand-alone)', 'Nursing Home', 'Health Programme']
     )
-
+    
     # Serialize data to GeoJSON
     county_json = serialize('geojson', [kisumu_county],
         geometry_field='geom',
         fields=('county',)
     )
-
     constituencies_json = serialize('geojson', kisumu_constituencies,
         geometry_field='geom',
         fields=('const_name', 'const_no')
     )
-
     wards_json = serialize('geojson', kisumu_wards,
         geometry_field='geom',
-        fields=('ward', 'pop2009', 'subcounty')
+        fields=('ward', 'pop2019', 'subcounty')
     )
-
     facilities_json = serialize('geojson', selected_facilities,
         geometry_field='location',
         fields=('name', 'facility_type', 'capacity')
     )
     
-    # Calculate summary statistics
-    total_population = sum(ward.pop2009 or 0 for ward in kisumu_wards)
-    total_facilities = selected_facilities.count()
+    # Count facilities by type
+    facility_types = {}
+    for facility in selected_facilities:
+        facility_type = facility.facility_type
+        facility_types[facility_type] = facility_types.get(facility_type, 0) + 1
     
-    # Calculate coverage (simplified for demonstration)
-    # In a real implementation, you'd use your service area analysis
-    coverage_percent = 65.3  # Example value
+    # Get population density dataset
+    population_dataset = PopulationDensity.objects.first()
+    if not population_dataset:
+        return JsonResponse({'error': 'No population dataset available'}, status=404)
     
-    # Travel time coverage (simplified for demonstration)
+    # Get Kisumu boundary
+    kisumu_boundary_django = get_kisumu_boundary()
+    if hasattr(kisumu_boundary_django, 'wkt'):
+        from shapely import wkt
+        kisumu_boundary = wkt.loads(kisumu_boundary_django.wkt)
+    else:
+        kisumu_boundary = kisumu_boundary_django
+    
+    # Set up projection for area calculations
+    wgs84 = pyproj.CRS('EPSG:4326')
+    utm = pyproj.CRS('EPSG:32736')
+    transformer = pyproj.Transformer.from_crs(wgs84, utm, always_xy=True)
+    
+    def transform_fn(x, y):
+        return transformer.transform(x, y)
+    
+    # Calculate total population from ward data
+    total_population = sum(ward.pop2019 or 0 for ward in kisumu_wards)
+    print(f"Total population from ward data: {total_population}")
+    
+    # Calculate 5km service areas for coverage analysis
+    facility_buffers = []
+    for facility in selected_facilities:
+        try:
+            # Get facility point as shapely geometry
+            facility_point = shape(json.loads(facility.location.json))
+            
+            # Create buffer (similar to merged_service_areas function)
+            lat = facility_point.y
+            lon = facility_point.x
+            
+            # Calculate approximate degrees for 5km buffer
+            lat_km_per_degree = 111.0
+            lon_km_per_degree = 111.0 * np.cos(np.radians(lat))
+            
+            # Convert 5km to degrees
+            lat_buffer = 5.0 / lat_km_per_degree
+            
+            # Create buffer
+            buffer = Point(lon, lat).buffer(lat_buffer)
+            
+            # Scale to account for longitude distortion
+            scale_factor = lon_km_per_degree / lat_km_per_degree
+            buffer = scale(buffer, xfact=scale_factor, yfact=1.0, origin='center')
+            
+            # Ensure buffer is valid
+            if not buffer.is_valid:
+                buffer = buffer.buffer(0)  # This often fixes invalid geometries
+            
+            if buffer.is_valid:
+                facility_buffers.append(buffer)
+        except Exception as e:
+            print(f"Error creating buffer for facility: {str(e)}")
+            continue
+    
+    # Merge all buffers to get total coverage area
+    merged_buffer = unary_union(facility_buffers)
+    
+    # Clip to Kisumu boundary
+    if kisumu_boundary:
+        merged_buffer = merged_buffer.intersection(kisumu_boundary)
+    
+    # Calculate coverage statistics
+    coverage_stats = {}
+    underserved_areas = None
+    underserved_population = 0
+    coverage_percent = 0
+    served_population = 0
+    
+    try:
+        # Project geometries to UTM for accurate area calculation
+        kisumu_utm = transform(transform_fn, kisumu_boundary)
+        merged_buffer_utm = transform(transform_fn, merged_buffer)
+        
+        # Calculate areas in square kilometers
+        kisumu_area_km2 = kisumu_utm.area / 1000000
+        covered_area_km2 = merged_buffer_utm.area / 1000000
+        
+        # Calculate coverage percentage
+        coverage_percent = (covered_area_km2 / kisumu_area_km2) * 100
+        
+        # Find underserved areas (areas outside the buffer)
+        underserved_areas = kisumu_boundary.difference(merged_buffer)
+        underserved_areas_utm = transform(transform_fn, underserved_areas)
+        underserved_area_km2 = underserved_areas_utm.area / 1000000
+        
+        # Calculate served and underserved population using ward data
+        served_population = 0
+        underserved_population = 0
+        
+        for ward in kisumu_wards:
+            try:
+                ward_geom = shape(json.loads(ward.geom.json))
+                ward_pop = ward.pop2019 or 0
+                
+                # Calculate intersection with facility buffers
+                ward_coverage_geom = ward_geom.intersection(merged_buffer)
+                ward_coverage_utm = transform(transform_fn, ward_coverage_geom)
+                coverage_km2 = ward_coverage_utm.area / 1000000
+                
+                # Calculate uncovered area
+                uncovered_geom = ward_geom.difference(merged_buffer)
+                uncovered_utm = transform(transform_fn, uncovered_geom)
+                uncovered_km2 = uncovered_utm.area / 1000000
+                
+                # Calculate ward area
+                ward_utm = transform(transform_fn, ward_geom)
+                ward_area_km2 = ward_utm.area / 1000000
+                
+                # Calculate percentage covered
+                if ward_area_km2 > 0:
+                    coverage_percent_ward = (coverage_km2 / ward_area_km2) * 100
+                    uncovered_percent_ward = 100 - coverage_percent_ward
+                else:
+                    coverage_percent_ward = 0
+                    uncovered_percent_ward = 0
+                
+                # Estimate served and underserved population based on area coverage
+                ward_served_pop = int(ward_pop * (coverage_percent_ward / 100))
+                ward_underserved_pop = ward_pop - ward_served_pop
+                
+                served_population += ward_served_pop
+                underserved_population += ward_underserved_pop
+                
+            except Exception as e:
+                print(f"Error calculating coverage for ward {ward.ward}: {str(e)}")
+        
+        # Calculate served percentage
+        served_percent = (served_population / total_population) * 100 if total_population > 0 else 0
+        underserved_percent = (underserved_population / total_population) * 100 if total_population > 0 else 0
+        
+        coverage_stats = {
+            'covered_area_km2': round(covered_area_km2, 2),
+            'total_area_km2': round(kisumu_area_km2, 2),
+            'coverage_percent': round(coverage_percent, 1),
+            'served_population': served_population,
+            'served_percent': round(served_percent, 1),
+            'underserved_area_km2': round(underserved_area_km2, 2),
+            'underserved_population': underserved_population,
+            'underserved_percent': round(underserved_percent, 1)
+        }
+    except Exception as e:
+        print(f"Error calculating coverage statistics: {str(e)}")
+        print(traceback.format_exc())
+    
+    # Identify priority wards based on population and coverage
+    priority_wards = []
+    ward_coverage = {}
+    
+    try:
+        # Calculate coverage and population for each ward
+        for ward in kisumu_wards:
+            try:
+                ward_name = ward.ward
+                ward_geom = shape(json.loads(ward.geom.json))
+                ward_pop = ward.pop2019 or 0
+                
+                # Calculate ward area
+                ward_utm = transform(transform_fn, ward_geom)
+                ward_area_km2 = ward_utm.area / 1000000
+                
+                # Calculate intersection with facility buffers
+                ward_coverage_geom = ward_geom.intersection(merged_buffer)
+                ward_coverage_utm = transform(transform_fn, ward_coverage_geom)
+                coverage_km2 = ward_coverage_utm.area / 1000000
+                
+                # Calculate uncovered area
+                uncovered_geom = ward_geom.difference(merged_buffer)
+                uncovered_utm = transform(transform_fn, uncovered_geom)
+                uncovered_km2 = uncovered_utm.area / 1000000
+                
+                # Calculate percentage covered
+                if ward_area_km2 > 0:
+                    coverage_percent_ward = (coverage_km2 / ward_area_km2) * 100
+                    uncovered_percent_ward = 100 - coverage_percent_ward
+                else:
+                    coverage_percent_ward = 0
+                    uncovered_percent_ward = 0
+                
+                # Calculate ward population density
+                ward_density = ward_pop / ward_area_km2 if ward_area_km2 > 0 else 0
+                
+                # Estimate uncovered population based on area
+                uncovered_population = int(ward_pop * (uncovered_percent_ward / 100))
+                
+                # Calculate priority score (higher is more priority)
+                # Factors: uncovered population, population density, and coverage percentage
+                priority_score = (uncovered_population * 0.6) + (ward_density * 0.2) + ((100 - coverage_percent_ward) * 0.2)
+                
+                # Store ward coverage data
+                ward_coverage[ward_name] = {
+                    'ward': ward_name,
+                    'population': ward_pop,
+                    'area_km2': round(ward_area_km2, 2),
+                    'density': round(ward_density, 2),
+                    'coverage_percent': round(coverage_percent_ward, 1),
+                    'uncovered_percent': round(uncovered_percent_ward, 1),
+                    'uncovered_population': uncovered_population,
+                    'priority_score': round(priority_score, 2)
+                }
+            except Exception as e:
+                print(f"Error calculating coverage for ward {ward.ward}: {str(e)}")
+        
+        # Sort wards by priority score (descending)
+        sorted_wards = sorted(
+            ward_coverage.values(),
+            key=lambda x: x['priority_score'],
+            reverse=True
+        )
+        
+        # Take top 5 wards as priority
+        priority_wards = [ward['ward'] for ward in sorted_wards[:5]]
+    
+    except Exception as e:
+        print(f"Error identifying priority wards: {str(e)}")
+        print(traceback.format_exc())
+    
+    # Calculate travel time coverage (simplified)
     # In a real implementation, you'd use your travel time analysis
     travel_time_coverage = {
-        5: 25.7,   # 5 minutes: 25.7% coverage
-        10: 42.3,  # 10 minutes: 42.3% coverage
-        15: 58.1,  # 15 minutes: 58.1% coverage
-        30: 78.9   # 30 minutes: 78.9% coverage
+        5: min(coverage_stats.get('served_percent', 0) * 0.4, 100),   # Estimate: 40% of 5km coverage
+        10: min(coverage_stats.get('served_percent', 0) * 0.65, 100),  # Estimate: 65% of 5km coverage
+        15: min(coverage_stats.get('served_percent', 0) * 0.85, 100),  # Estimate: 85% of 5km coverage
+        30: min(coverage_stats.get('served_percent', 0) * 1.2, 100)    # Estimate: 120% of 5km coverage (capped at 100%)
     }
     
     # Create summary stats object
     summary_stats = {
-        'total_population': float(total_population) if isinstance(total_population, Decimal) else total_population,
-        'total_facilities': total_facilities,
-        'coverage_percent': coverage_percent,
-        'travel_time_coverage': travel_time_coverage
+        'total_population': total_population,
+        'total_facilities': selected_facilities.count(),
+        'facility_types': facility_types,
+        'coverage_stats': coverage_stats,
+        'travel_time_coverage': {k: round(v, 1) for k, v in travel_time_coverage.items()},
+        'distribution_quality': 'unevenly' if coverage_stats.get('coverage_percent', 0) < 75 else 'moderately even',
+        'priority_wards': priority_wards,
+        'ward_coverage': ward_coverage
     }
-
-    # Custom JSON to handle Decimal objects
+    
+    # Custom JSON encoder to handle Decimal objects
     class DecimalEncoder(json.JSONEncoder):
         def default(self, obj):
             if isinstance(obj, Decimal):
                 return float(obj)
             return super(DecimalEncoder, self).default(obj)
-
+    
     context = {
         'county': county_json,
         'constituencies': constituencies_json,
@@ -786,19 +1175,29 @@ def healthcare_dashboard(request):
         'facilities': facilities_json,
         'summary_stats': json.dumps(summary_stats, cls=DecimalEncoder),
     }
-
+    
     return render(request, 'maps/dashboard.html', context)
+
+
 
 @csrf_exempt
 def merged_service_areas(request):
-    """API endpoint to generate merged 5km service areas for all facilities"""
+    """API endpoint to generate merged service areas for all facilities with type-specific buffer sizes"""
     try:
         # Get facilities
         selected_facilities = HealthCareFacility.objects.exclude(
-            facility_type__in=['Dispensary', 'Pharmacy', 'VCT Centre (Stand-Alone)', 'Laboratory (Stand-alone)', 'Nursing Home', 'Health Programme',  ]
+            facility_type__in=['Dispensary', 'Pharmacy', 'VCT Centre (Stand-Alone)', 
+                              'Laboratory (Stand-alone)', 'Nursing Home', 'Health Programme']
         )
         
         print(f"Creating buffers for {selected_facilities.count()} facilities")
+        
+        # Define buffer sizes for different facility types (in km)
+        buffer_sizes = {
+            'Hospital': 10.0,                  # Larger radius for hospitals
+            'Health Centre': 7.0,              # Medium radius for health centers
+            'Medical Clinic': 5.0,             # Standard radius for clinics                    # Default radius
+        }
         
         # Create buffer for each facility
         from shapely.geometry import Point
@@ -806,12 +1205,14 @@ def merged_service_areas(request):
         
         for facility in selected_facilities:
             try:
-                # Create a 5km buffer
+                # Get the appropriate buffer size for this facility type
+                facility_type = facility.facility_type
+                buffer_size_km = buffer_sizes.get(facility_type, 5.0)  # Default to 5km if type not found
+                
+                # Create a buffer with the appropriate size
                 point = Point(facility.location.x, facility.location.y)
                 
                 # Convert km to degrees (approximate)
-                # 1 degree latitude is about 111 km
-                # 1 degree longitude varies with latitude, roughly 111 * cos(latitude) km
                 lat = point.y
                 lon = point.x
                 
@@ -819,13 +1220,15 @@ def merged_service_areas(request):
                 lat_km_per_degree = 111.0  # km per degree of latitude
                 lon_km_per_degree = 111.0 * np.cos(np.radians(lat))  # km per degree of longitude
                 
-                # Convert 5km to degrees (different for lat and lon)
-                lat_buffer = 5.0 / lat_km_per_degree
-                lon_buffer = 5.0 / lon_km_per_degree
+                # Convert buffer size to degrees (different for lat and lon)
+                lat_buffer = buffer_size_km / lat_km_per_degree
                 
                 # Create an elliptical buffer (more accurate than circular at non-equatorial latitudes)
                 buffer = point.buffer(lat_buffer)
-                buffer = scale(buffer, xfact=lon_km_per_degree/lat_km_per_degree, yfact=1.0, origin='center')
+                
+                # Scale to account for longitude distortion
+                scale_factor = lon_km_per_degree / lat_km_per_degree
+                buffer = scale(buffer, xfact=scale_factor, yfact=1.0, origin='center')
                 
                 # Ensure the buffer is valid
                 if not buffer.is_valid:
@@ -833,6 +1236,7 @@ def merged_service_areas(request):
                 
                 if buffer.is_valid:
                     buffers.append(buffer)
+                    print(f"Created {buffer_size_km}km buffer for {facility.name} ({facility_type})")
                 else:
                     print(f"Skipping invalid buffer for facility {facility.name}")
             except Exception as e:
@@ -848,10 +1252,49 @@ def merged_service_areas(request):
         # Merge all buffers
         from shapely.ops import unary_union
         try:
-            merged_buffer = unary_union(buffers)
+            # Make sure all buffers are valid before merging
+            valid_buffers = []
+            for i, buffer in enumerate(buffers):
+                if buffer.is_valid:
+                    valid_buffers.append(buffer)
+                else:
+                    print(f"Buffer {i} is invalid, attempting to fix")
+                    fixed_buffer = buffer.buffer(0)
+                    if fixed_buffer.is_valid:
+                        valid_buffers.append(fixed_buffer)
+                    else:
+                        print(f"Could not fix buffer {i}, skipping")
+            
+            print(f"Merging {len(valid_buffers)} valid buffers")
+            
+            # If we have many buffers, merge them in batches to avoid memory issues
+            if len(valid_buffers) > 100:
+                print("Large number of buffers, merging in batches")
+                batch_size = 50
+                merged_buffer = None
+                
+                for i in range(0, len(valid_buffers), batch_size):
+                    batch = valid_buffers[i:i+batch_size]
+                    batch_merged = unary_union(batch)
+                    
+                    if merged_buffer is None:
+                        merged_buffer = batch_merged
+                    else:
+                        merged_buffer = unary_union([merged_buffer, batch_merged])
+                    
+                    print(f"Merged batch {i//batch_size + 1}/{(len(valid_buffers)+batch_size-1)//batch_size}")
+            else:
+                merged_buffer = unary_union(valid_buffers)
+            
             print(f"Successfully merged buffers: {merged_buffer.geom_type}")
+            
+            # Simplify the merged buffer to reduce complexity
+            merged_buffer = merged_buffer.simplify(0.0001)
+            print("Simplified merged buffer")
+            
         except Exception as e:
             print(f"Error merging buffers: {str(e)}")
+            print(traceback.format_exc())
             return JsonResponse({
                 'error': f'Error merging buffers: {str(e)}'
             }, status=500)
@@ -877,29 +1320,23 @@ def merged_service_areas(request):
             if kisumu_boundary:
                 print("Clipping buffer to Kisumu boundary")
                 try:
-                    # Use prepared geometries for better performance
-                    from shapely.prepared import prep
-                    prepared_boundary = prep(kisumu_boundary)
+                    # Ensure both geometries are valid
+                    kisumu_boundary = kisumu_boundary.buffer(0)
+                    merged_buffer = merged_buffer.buffer(0)
                     
-                    # Check if the merged buffer intersects with the boundary
-                    if prepared_boundary.intersects(merged_buffer):
-                        # Use a small buffer to avoid topology errors
-                        kisumu_boundary = kisumu_boundary.buffer(0)
-                        merged_buffer = merged_buffer.buffer(0)
-                        
-                        # Now perform the intersection
-                        merged_buffer = merged_buffer.intersection(kisumu_boundary)
-                        print(f"Successfully clipped buffer: {merged_buffer.geom_type}")
-                    else:
-                        print("Merged buffer does not intersect with Kisumu boundary")
+                    # Now perform the intersection
+                    merged_buffer = merged_buffer.intersection(kisumu_boundary)
+                    print(f"Successfully clipped buffer: {merged_buffer.geom_type}")
                 except Exception as e:
                     print(f"Error clipping buffer to boundary: {str(e)}")
+                    print(traceback.format_exc())
                     # Continue with the unclipped buffer
                     print("Continuing with unclipped buffer")
             else:
                 print("No valid Kisumu boundary available for clipping")
         except Exception as e:
             print(f"Error processing Kisumu boundary: {str(e)}")
+            print(traceback.format_exc())
             # Continue with the unclipped buffer
         
         # Convert to GeoJSON
@@ -916,9 +1353,13 @@ def merged_service_areas(request):
         # Return the GeoJSON
         return JsonResponse({
             'type': 'Feature',
-            'geometry': merged_geojson
+            'geometry': merged_geojson,
+            'properties': {
+                'buffer_types': buffer_sizes,
+                'facility_count': selected_facilities.count()
+            }
         })
-        
+    
     except Exception as e:
         print("Error generating merged service areas:", str(e))
         print(traceback.format_exc())
@@ -926,6 +1367,7 @@ def merged_service_areas(request):
             'error': str(e),
             'traceback': traceback.format_exc()
         }, status=500)
+
 
 
 
