@@ -402,13 +402,13 @@ def site_suitability_analysis(request):
         
         # Define buffer sizes for different facility types (in km)
         buffer_sizes = {
-            'Hospital': 10.0,                  # Larger radius for hospitals
-            'Health Centre': 7.0,              # Medium radius for health centers
+            'District Hospital': 10.0,                  # Larger radius for hospitals
+            'Povincial General Hospital': 15,              # Medium radius for health centers
             'Medical Clinic': 5.0,             # Standard radius for clinics
-            'Medical Center': 6.0,             # Medium radius for medical centers
-            'Faith Based Facility': 6.0,       # Medium radius
-            'Stand-alone': 3.0,                # Smaller radius for standalone facilities
-            'Other': 5.0                       # Default radius
+            'Other Hospital': 5.0,             # Medium radius for medical centers
+            'Sub-District Hospital': 6.0,       # Medium radius
+            'Health Center' : 3,
+
         }
         
         # Get buffer size for target facility type
@@ -1194,9 +1194,12 @@ def merged_service_areas(request):
         
         # Define buffer sizes for different facility types (in km)
         buffer_sizes = {
-            'Hospital': 10.0,                  # Larger radius for hospitals
-            'Health Centre': 7.0,              # Medium radius for health centers
-            'Medical Clinic': 5.0,             # Standard radius for clinics                    # Default radius
+           'District Hospital': 10.0,                  # Larger radius for hospitals
+            'Povincial General Hospital': 15,              # Medium radius for health centers
+            'Medical Clinic': 5.0,             # Standard radius for clinics
+            'Other Hospital': 5.0,             # Medium radius for medical centers
+            'Sub-District Hospital': 6.0,       # Medium radius
+            'Health Center' : 3,                 # Default radius
         }
         
         # Create buffer for each facility
