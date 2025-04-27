@@ -432,8 +432,9 @@ function initializeWardStats() {
                                             coverage = summaryStats.ward_coverage[wardName].coverage_percent;
                                         }
                                         
-                                        // Calculate priority score
-                                        const priorityScore = ((population / 10000) / (facilities + 1)) * ((100 - coverage) / 100);
+                                        // Calculate priority score with a reasonable cap
+                                        const rawPriorityScore = ((population / 10000) / (facilities + 1)) * ((100 - coverage) / 100);
+                                        const priorityScore = Math.min(rawPriorityScore, 10); // Cap at 10 for readability
                                         
                                         // Create table row
                                         const row = tableBody.insertRow();
@@ -451,6 +452,11 @@ function initializeWardStats() {
                                         facCell.textContent = facilities;
                                         covCell.textContent = coverage.toFixed(1) + '%';
                                         priorityCell.textContent = priorityScore.toFixed(2);
+
+                                        // Add tooltip to explain priority score
+                                        priorityCell.title = `Priority Score: Higher values indicate greater need for healthcare facilities.
+                                        Calculation: (Population/${10000})/(Facilities+1)×(${100-coverage}%)`;
+
                                         
                                         // Color code priority
                                         if (priorityScore > 5) {
@@ -490,8 +496,8 @@ function initializeWardStats() {
                         facilities.forEach(facility => {
                             try {
                                 const facilityPoint = turf.point([
-                                    facility.geometry.coordinates[0],
-                                    facility.geometry.coordinates[1]
+                                    facility.geometry.coordinates[1],
+                                    facility.geometry.coordinates[0]
                                 ]);
                                 
                                 // Check which ward contains this facility

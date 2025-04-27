@@ -392,6 +392,15 @@ def get_population_density_for_area(request):
 @csrf_exempt
 def site_suitability_analysis(request):
     """API endpoint to identify optimal locations for new healthcare facilities"""
+    from decimal import Decimal
+    
+    # Helper function to convert values to float
+    def to_float(value):
+        """Convert value to float, handling Decimal types"""
+        if isinstance(value, Decimal):
+            return float(value)
+        return float(value) if value is not None else 0.0
+    
     try:
         print("Starting site suitability analysis...")
         start_time = time.time()
@@ -402,13 +411,12 @@ def site_suitability_analysis(request):
         
         # Define buffer sizes for different facility types (in km)
         buffer_sizes = {
-            'District Hospital': 10.0,                  # Larger radius for hospitals
-            'Povincial General Hospital': 15,              # Medium radius for health centers
-            'Medical Clinic': 5.0,             # Standard radius for clinics
-            'Other Hospital': 5.0,             # Medium radius for medical centers
-            'Sub-District Hospital': 6.0,       # Medium radius
-            'Health Center' : 3,
-
+            'District Hospital': 8.0,                  # Larger radius for hospitals
+            'Povincial General Hospital': 10.0,        # Medium radius for health centers
+            'Medical Clinic': 3.0,                     # Standard radius for clinics
+            'Other Hospital': 5.0,                     # Medium radius for medical centers
+            'Sub-District Hospital': 6.0,              # Medium radius
+            'Health Center': 3.0,
         }
         
         # Get buffer size for target facility type
@@ -417,7 +425,7 @@ def site_suitability_analysis(request):
         
         # Get existing facilities
         existing_facilities = HealthCareFacility.objects.exclude(
-            facility_type__in=['Dispensary', 'Pharmacy', 'VCT Centre (Stand-Alone)', 
+            facility_type__in=['Dispensary', 'Pharmacy', 'VCT Centre (Stand-Alone)',
                               'Laboratory (Stand-alone)', 'Nursing Home', 'Health Programme']
         )
         
@@ -447,8 +455,8 @@ def site_suitability_analysis(request):
                 buffer_size_km = buffer_sizes.get(facility_type, 5.0)
                 
                 # Create buffer
-                lat = facility_point.y
-                lon = facility_point.x
+                lat = to_float(facility_point.y)
+                lon = to_float(facility_point.x)
                 
                 # Calculate approximate degrees for buffer
                 lat_km_per_degree = 111.0
@@ -520,7 +528,8 @@ def site_suitability_analysis(request):
         
         for ward in kisumu_wards:
             ward_geometries[ward.ward] = shape(json.loads(ward.geom.json))
-            ward_populations[ward.ward] = ward.pop2009 or 0
+            # Convert to float to avoid Decimal issues
+            ward_populations[ward.ward] = to_float(ward.pop2019 or 0)
         
         print(f"Loaded {len(kisumu_wards)} wards with population data")
         
@@ -529,7 +538,7 @@ def site_suitability_analysis(request):
         
         # Create a grid of potential facility locations
         # Adjust grid size based on county size
-        county_area_km2 = kisumu_boundary.area * (111 * 111)  # Rough conversion to km²
+        county_area_km2 = to_float(underserved_areas.area) * (111 * 111)  # Rough conversion to km²
         
         # Adaptive grid size - smaller grid for smaller counties
         if county_area_km2 < 1000:
@@ -574,7 +583,7 @@ def site_suitability_analysis(request):
         
         # Calculate county-wide statistics for normalization
         county_pop_total = sum(ward_populations.values())
-        print(f"Total county population (2009): {county_pop_total}")
+        print(f"Total county population (2019): {county_pop_total}")
         
         # Open the raster file once for all points
         with rasterio.open(population_dataset.raster_file.path) as src:
@@ -598,7 +607,7 @@ def site_suitability_analysis(request):
                           f"max={county_density_stats['max']:.1f}, mean={county_density_stats['mean']:.1f}")
             except Exception as e:
                 print(f"Error calculating county density stats: {str(e)}")
-                county_density_stats = {'max': 1000, 'mean': 500}  # Fallback values
+                county_density_stats = {'max': 1000.0, 'mean': 500.0}  # Fallback values
             
             for batch_idx in range(num_batches):
                 start_idx = batch_idx * batch_size
@@ -610,8 +619,8 @@ def site_suitability_analysis(request):
                 for point in batch_points:
                     try:
                         # Create a service area around this point based on target facility type
-                        lat = point.y
-                        lon = point.x
+                        lat = to_float(point.y)
+                        lon = to_float(point.x)
                         
                         # Calculate approximate degrees for buffer
                         lat_km_per_degree = 111.0
@@ -659,7 +668,7 @@ def site_suitability_analysis(request):
                                     return transformer.transform(x, y)
                                 
                                 service_area_utm = transform(transform_fn, service_area)
-                                area_km2 = service_area_utm.area / 1000000
+                                area_km2 = to_float(service_area_utm.area) / 1000000
                                 
                                 # Calculate population served
                                 population_served = int(mean_density * area_km2)
@@ -672,7 +681,7 @@ def site_suitability_analysis(request):
                                 for ward_name, ward_geom in ward_geometries.items():
                                     if point.within(ward_geom):
                                         ward = ward_name
-                                        ward_pop = ward_populations.get(ward_name, 0)
+                                        ward_pop = to_float(ward_populations.get(ward_name, 0))
                                         break
                                 
                                 # Calculate ward coverage and population metrics
@@ -683,12 +692,12 @@ def site_suitability_analysis(request):
                                     # Calculate how much of the ward is already covered by existing facilities
                                     ward_geom = ward_geometries[ward]
                                     ward_area_utm = transform(transform_fn, ward_geom)
-                                    ward_area_km2 = ward_area_utm.area / 1000000
+                                    ward_area_km2 = to_float(ward_area_utm.area) / 1000000
                                     
                                     # Calculate intersection with existing facility buffers
                                     ward_coverage = ward_geom.intersection(merged_buffer)
                                     ward_coverage_utm = transform(transform_fn, ward_coverage)
-                                    coverage_km2 = ward_coverage_utm.area / 1000000
+                                    coverage_km2 = to_float(ward_coverage_utm.area) / 1000000
                                     
                                     # Calculate percentage covered
                                     if ward_area_km2 > 0:
@@ -699,7 +708,7 @@ def site_suitability_analysis(request):
                                 
                                 # 1. Population density score (0-1)
                                 # Normalize against county-wide statistics
-                                density_max = county_density_stats.get('max', 1000)
+                                density_max = to_float(county_density_stats.get('max', 1000))
                                 density_score = min(mean_density / (density_max * 0.7), 1.0)
                                 
                                 # 2. Ward coverage score (0-1)
@@ -709,20 +718,19 @@ def site_suitability_analysis(request):
                                 # 3. Population served score (0-1)
                                 # Normalize based on expected population for facility type
                                 expected_pop = {
-                                    'Hospital': 100000,
-                                    'Health Centre': 50000,
-                                    'Medical Clinic': 30000,
-                                    'Medical Center': 40000,
-                                    'Faith Based Facility': 40000,
-                                    'Stand-alone': 20000,
-                                    'Other': 30000
+                                    'District Hospital': 300000,                  # Larger radius for hospitals
+                                    'Povincial General Hospital': 800000,        # Medium radius for health centers
+                                    'Medical Clinic': 7500,                       # Standard radius for clinics
+                                    'Other Hospital': 5000,                       # Medium radius for medical centers
+                                    'Sub-District Hospital': 100000,              # Medium radius
+                                    'Health Center': 10000,
                                 }
-                                target_pop = expected_pop.get(target_facility_type, 30000)
+                                target_pop = to_float(expected_pop.get(target_facility_type, 30000))
                                 population_score = min(population_served / target_pop, 1.0)
                                 
                                 # 4. Ward population score (0-1)
                                 # Higher ward population is better
-                                ward_pop_score = min(ward_pop / 50000, 1.0)
+                                ward_pop_score = min(to_float(ward_pop) / 50000, 1.0)
                                 
                                 # 5. Accessibility score (0-1)
                                 # Areas with higher max density might indicate urban centers with better access
@@ -734,8 +742,8 @@ def site_suitability_analysis(request):
                                     'population_served': 0.35,  # Population served is most important
                                     'coverage': 0.25,          # Low existing coverage is important
                                     'ward_population': 0.15,   # Ward population is moderately important
-                                    'density': 0.15,           # Population density is moderately important
-                                    'accessibility': 0.10      # Accessibility is least important
+                                    'density': 0.20,           # Population density is moderately important
+                                    'accessibility': 0.15      # Accessibility is least important
                                 }
                                 
                                 composite_score = (
@@ -752,20 +760,20 @@ def site_suitability_analysis(request):
                                     'geometry': mapping(point),
                                     'properties': {
                                         'population_served': population_served,
-                                        'area_km2': area_km2,
-                                        'mean_density': mean_density,
-                                        'max_density': max_density,
+                                        'area_km2': float(area_km2),
+                                        'mean_density': float(mean_density),
+                                        'max_density': float(max_density),
                                         'ward': ward,
-                                        'ward_population': ward_pop,
-                                        'ward_coverage_percent': round(ward_coverage_percent, 1),
-                                        'density_score': round(density_score, 2),
-                                        'coverage_score': round(coverage_score, 2),
-                                        'population_score': round(population_score, 2),
-                                        'ward_pop_score': round(ward_pop_score, 2),
-                                        'accessibility_score': round(accessibility_score, 2),
-                                        'composite_score': round(composite_score, 2),
+                                        'ward_population': float(ward_pop),
+                                        'ward_coverage_percent': round(float(ward_coverage_percent), 1),
+                                        'density_score': round(float(density_score), 2),
+                                        'coverage_score': round(float(coverage_score), 2),
+                                        'population_score': round(float(population_score), 2),
+                                        'ward_pop_score': round(float(ward_pop_score), 2),
+                                        'accessibility_score': round(float(accessibility_score), 2),
+                                        'composite_score': round(float(composite_score), 2),
                                         'facility_type': target_facility_type,
-                                        'buffer_km': target_buffer_size
+                                        'buffer_km': float(target_buffer_size)
                                     }
                                 })
                         except Exception as e:
@@ -786,13 +794,12 @@ def site_suitability_analysis(request):
             # 2. Define a minimum distance between recommended facilities (in degrees)
             # Adjust minimum distance based on facility type
             min_distance_km = {
-                'Hospital': 15.0,
-                'Health Centre': 10.0,
-                'Medical Clinic': 7.0,
-                'Medical Center': 8.0,
-                'Faith Based Facility': 8.0,
-                'Stand-alone': 5.0,
-                'Other': 7.0
+                'District Hospital': 8.0,                  # Larger radius for hospitals
+                'Povincial General Hospital': 10.0,        # Medium radius for health centers
+                'Medical Clinic': 3.0,                     # Standard radius for clinics
+                'Other Hospital': 5.0,                     # Medium radius for medical centers
+                'Sub-District Hospital': 6.0,              # Medium radius
+                'Health Center': 3.0,
             }.get(target_facility_type, 7.0)
             
             # Convert km to degrees (approximate)
@@ -852,13 +859,13 @@ def site_suitability_analysis(request):
         # Create summary statistics for the results
         summary = {
             'facility_type': target_facility_type,
-            'buffer_size_km': target_buffer_size,
+            'buffer_size_km': float(target_buffer_size),
             'total_locations_analyzed': len(scored_locations),
-            'top_location_score': top_locations[0]['properties']['composite_score'] if top_locations else 0,
-            'average_score': sum(loc['properties']['composite_score'] for loc in top_locations) / len(top_locations) if top_locations else 0,
-            'total_population_served': sum(loc['properties']['population_served'] for loc in top_locations) if top_locations else 0,
+            'top_location_score': float(top_locations[0]['properties']['composite_score']) if top_locations else 0,
+            'average_score': float(sum(loc['properties']['composite_score'] for loc in top_locations) / len(top_locations)) if top_locations else 0,
+            'total_population_served': int(sum(loc['properties']['population_served'] for loc in top_locations)) if top_locations else 0,
             'wards_covered': len(set(loc['properties']['ward'] for loc in top_locations if loc['properties']['ward'])) if top_locations else 0,
-            'processing_time_seconds': processing_time
+            'processing_time_seconds': float(processing_time)
         }
         
         return JsonResponse({
@@ -878,6 +885,7 @@ def site_suitability_analysis(request):
             'error': str(e),
             'traceback': traceback.format_exc()
         }, status=500)
+
 
 
 
