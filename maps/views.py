@@ -1075,7 +1075,38 @@ def healthcare_dashboard(request):
     except Exception as e:
         print(f"Error calculating coverage statistics: {str(e)}")
         print(traceback.format_exc())
+
+    # Calculate facilities per ward directly in the backend
+    facilities_per_ward = {}
+
+    # Initialize all wards with zero facilities
+    for ward in kisumu_wards:
+        facilities_per_ward[ward.ward] = 0
     
+    # Count facilities in each ward
+    for facility in selected_facilities:
+        try:
+            facility_point = shape(json.loads(facility.location.json))
+            
+            # Check which ward contains this facility
+            for ward in kisumu_wards:
+                try:
+                    ward_geom = shape(json.loads(ward.geom.json))
+                    
+                    # Check if facility is inside this ward
+                    if ward_geom.contains(facility_point):
+                        facilities_per_ward[ward.ward] += 1
+                        break
+                except Exception as e:
+                    print(f"Error checking if facility is in ward {ward.ward}: {str(e)}")
+        except Exception as e:
+            print(f"Error processing facility for ward count: {str(e)}")
+    
+    # Log the results
+    print("Facilities per ward calculation complete:")
+    for ward_name, count in facilities_per_ward.items():
+        print(f"{ward_name}: {count} facilities")
+
     # Identify priority wards based on population and coverage
     priority_wards = []
     ward_coverage = {}
@@ -1116,6 +1147,9 @@ def healthcare_dashboard(request):
                 # Estimate uncovered population based on area
                 uncovered_population = int(ward_pop * (uncovered_percent_ward / 100))
                 
+                # Get facility count for  this ward
+                facility_count = facilities_per_ward.get(ward_name, 0)
+                
                 # Calculate priority score (higher is more priority)
                 # Factors: uncovered population, population density, and coverage percentage
                 priority_score = (uncovered_population * 0.6) + (ward_density * 0.2) + ((100 - coverage_percent_ward) * 0.2)
@@ -1129,7 +1163,8 @@ def healthcare_dashboard(request):
                     'coverage_percent': round(coverage_percent_ward, 1),
                     'uncovered_percent': round(uncovered_percent_ward, 1),
                     'uncovered_population': uncovered_population,
-                    'priority_score': round(priority_score, 2)
+                    'priority_score': round(priority_score, 2),
+                    'facilities': facility_count
                 }
             except Exception as e:
                 print(f"Error calculating coverage for ward {ward.ward}: {str(e)}")

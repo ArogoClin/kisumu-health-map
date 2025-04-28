@@ -718,7 +718,7 @@
 </script>
 
 <!-- Application script -->
-<script src="{% static 'map/js/dashboard.js' %}"></script>
+<script src="{% static 'map/js/dashboard.js' %}?v={% now 'U' %}"></script>
 
 <!-- Add search functionality for ward table -->
 <script>

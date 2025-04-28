@@ -232,299 +232,94 @@ function initializeCoverageChart() {
     });
 }
 
-// Initialize the ward statistics table
+// Function to populate the ward statistics table
 function initializeWardStats() {
-    const tableBody = document.getElementById('wardStatsTable').getElementsByTagName('tbody')[0];
+    console.log("Populating ward statistics table...");
+    const tableBody = document.querySelector('#wardStatsTable tbody');
     
-    // Use ward coverage data from summary stats if available
-    if (summaryStats.ward_coverage && Object.keys(summaryStats.ward_coverage).length > 0) {
-        // Convert ward coverage object to array and sort by priority score
-        const wardStats = Object.entries(summaryStats.ward_coverage)
-            .map(([wardName, stats]) => ({
-                wardName,
-                ...stats
-            }))
-            .sort((a, b) => b.priority_score - a.priority_score);
+    // Clear loading row
+    tableBody.innerHTML = '';
+    
+    if (!window.summaryStats || !window.summaryStats.ward_coverage) {
+        console.error("Ward coverage data not available");
+        tableBody.innerHTML = '<tr><td colspan="5">Ward data not available</td></tr>';
+        return;
+    }
+    
+    // Get ward coverage data
+    const wardCoverage = window.summaryStats.ward_coverage;
+    
+    // Sort wards by priority score (descending)
+    const sortedWards = Object.values(wardCoverage).sort((a, b) => b.priority_score - a.priority_score);
+    
+    // Create table rows
+    sortedWards.forEach(ward => {
+        const row = document.createElement('tr');
         
-        // Add to table
-        wardStats.forEach(ward => {
-            // Create table row
-            const row = tableBody.insertRow();
-            
-            // Add cells
-            const nameCell = row.insertCell(0);
-            const popCell = row.insertCell(1);
-            const facCell = row.insertCell(2);
-            const covCell = row.insertCell(3);
-            const priorityCell = row.insertCell(4);
-            
-            // Add content
-            nameCell.textContent = ward.wardName;
-            popCell.textContent = ward.population.toLocaleString();
-            facCell.textContent = ward.facilities || 0;
-            covCell.textContent = ward.coverage_percent.toFixed(1) + '%';
-            priorityCell.textContent = ward.priority_score.toFixed(2);
-            
-            // Add tooltip with additional info
-            row.title = `Area: ${ward.area_km2.toFixed(2)} km² | Density: ${ward.density.toFixed(0)} people/km²`;
-            
-            // Color code priority
-            if (ward.priority_score > 5) {
-                priorityCell.style.backgroundColor = '#ffcccc';
-                priorityCell.style.color = '#cc0000';
-            } else if (ward.priority_score > 2) {
-                priorityCell.style.backgroundColor = '#fff2cc';
-                priorityCell.style.color = '#996600';
-            }
-        });
-    } else {
-        // Fallback: Calculate facilities per ward using spatial analysis
-        const facilitiesDataObj = typeof facilitiesData === 'string'
-            ? JSON.parse(facilitiesData)
-            : facilitiesData;
+        // Ward name
+        const nameCell = document.createElement('td');
+        nameCell.textContent = ward.ward;
+        row.appendChild(nameCell);
         
-        const wardsDataObj = typeof wardsData === 'string'
-            ? JSON.parse(wardsData)
-            : wardsData;
+        // Population
+        const popCell = document.createElement('td');
+        popCell.textContent = ward.population.toLocaleString();
+        row.appendChild(popCell);
         
-        const wards = wardsDataObj.features;
+        // Facilities - use the count from the backend
+        const facilitiesCell = document.createElement('td');
+        facilitiesCell.textContent = ward.facilities || 0;
+        row.appendChild(facilitiesCell);
         
-        // Calculate facilities per ward
-        const facilitiesPerWard = calculateFacilitiesPerWard(wards, facilitiesDataObj.features);
+        // Coverage
+        const coverageCell = document.createElement('td');
+        coverageCell.textContent = `${ward.coverage_percent.toFixed(1)}%`;
         
-        // Process each ward
-        const wardPromises = wards.map(ward => {
-            return new Promise((resolve) => {
-                // Use population density API to get accurate population
-                fetch('/maps/api/population-density-for-area/', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ area: ward })
-                })
-                .then(response => response.json())
-                .then(data => {
-                    const wardName = ward.properties.ward;
-                    
-                    // Use 2019 population if available, otherwise use API estimate or 2009 data
-                    let population;
-                    if (ward.properties.pop2019) {
-                        population = ward.properties.pop2019;
-                    } else if (data.estimated_population) {
-                        population = data.estimated_population;
-                    } else {
-                        population = ward.properties.pop2009 || 0;
-                    }
-                    
-                    const facilities = facilitiesPerWard[wardName] || 0;
-                    const area = data.area_km2 || 0;
-                    const density = data.mean_density || 0;
-                    
-                    // Calculate coverage based on service areas
-                    // This is a placeholder - in a real implementation, you'd use the actual service area data
-                    const coverage = 50; // Default 50% coverage
-                    
-                    // Calculate priority score (higher means higher need)
-                    // Formula: (population / 10000) / (facilities + 1) * (100 - coverage) / 100
-                    const priorityScore = ((population / 10000) / (facilities + 1)) * ((100 - coverage) / 100);
-                    
-                    resolve({
-                        wardName,
-                        population,
-                        facilities,
-                        coverage,
-                        priorityScore,
-                        area,
-                        density
-                    });
-                })
-                .catch(error => {
-                    console.error(`Error fetching population data for ward ${ward.properties.ward}:`, error);
-                    
-                    // Fallback to ward properties
-                    const wardName = ward.properties.ward;
-                    
-                    // Use 2019 population if available, otherwise use 2009 data
-                    const population = ward.properties.pop2019 || ward.properties.pop2009 || 0;
-                    const facilities = facilitiesPerWard[wardName] || 0;
-                    
-                    // Estimate coverage
-                    const coverage = 50; // Default 50% coverage
-                    
-                    // Calculate priority score
-                    const priorityScore = ((population / 10000) / (facilities + 1)) * ((100 - coverage) / 100);
-                    
-                    resolve({
-                        wardName,
-                        population,
-                        facilities,
-                        coverage,
-                        priorityScore,
-                        area: 0,
-                        density: 0
-                    });
-                });
-            });
-        });
+        // Add color coding based on coverage
+        if (ward.coverage_percent < 40) {
+            coverageCell.style.color = '#e74c3c'; // Red for low coverage
+        } else if (ward.coverage_percent < 70) {
+            coverageCell.style.color = '#f39c12'; // Orange for medium coverage
+        } else {
+            coverageCell.style.color = '#27ae60'; // Green for good coverage
+        }
         
-        // Process all ward data
-        Promise.all(wardPromises)
-            .then(wardStats => {
-                // Sort by priority score (highest first)
-                wardStats.sort((a, b) => b.priorityScore - a.priorityScore);
-                
-                // Add to table
-                wardStats.forEach(ward => {
-                    // Create table row
-                    const row = tableBody.insertRow();
-                    
-                    // Add cells
-                    const nameCell = row.insertCell(0);
-                    const popCell = row.insertCell(1);
-                    const facCell = row.insertCell(2);
-                    const covCell = row.insertCell(3);
-                    const priorityCell = row.insertCell(4);
-                    
-                    // Add content
-                    nameCell.textContent = ward.wardName;
-                    popCell.textContent = ward.population.toLocaleString();
-                    facCell.textContent = ward.facilities;
-                    covCell.textContent = ward.coverage.toFixed(1) + '%';
-                    priorityCell.textContent = ward.priorityScore.toFixed(2);
-                    
-                                        // Add tooltip with additional info
-                                        row.title = `Area: ${ward.area.toFixed(2)} km² | Density: ${ward.density.toFixed(0)} people/km²`;
-                    
-                                        // Color code priority
-                                        if (ward.priorityScore > 5) {
-                                            priorityCell.style.backgroundColor = '#ffcccc';
-                                            priorityCell.style.color = '#cc0000';
-                                        } else if (ward.priorityScore > 2) {
-                                            priorityCell.style.backgroundColor = '#fff2cc';
-                                            priorityCell.style.color = '#996600';
-                                        }
-                                    });
-                                })
-                                .catch(error => {
-                                    console.error("Error processing ward statistics:", error);
-                                    
-                                    // Fallback to simplified approach
-                                    const wardsDataObj = typeof wardsData === 'string'
-                                        ? JSON.parse(wardsData)
-                                        : wardsData;
-                                    
-                                    const wards = wardsDataObj.features;
-                                    
-                                    // Calculate facilities per ward
-                                    const facilitiesPerWard = calculateFacilitiesPerWard(wards, facilitiesDataObj.features);
-                                    
-                                    wards.forEach(ward => {
-                                        const wardName = ward.properties.ward;
-                                        
-                                        // Use 2019 population if available, otherwise use 2009 data
-                                        const population = ward.properties.pop2019 || ward.properties.pop2009 || 0;
-                                        const facilities = facilitiesPerWard[wardName] || 0;
-                                        
-                                        // Use coverage from summary stats if available
-                                        let coverage = 50; // Default 50% coverage
-                                        if (summaryStats.ward_coverage && summaryStats.ward_coverage[wardName]) {
-                                            coverage = summaryStats.ward_coverage[wardName].coverage_percent;
-                                        }
-                                        
-                                        // Calculate priority score with a reasonable cap
-                                        const rawPriorityScore = ((population / 10000) / (facilities + 1)) * ((100 - coverage) / 100);
-                                        const priorityScore = Math.min(rawPriorityScore, 10); // Cap at 10 for readability
-                                        
-                                        // Create table row
-                                        const row = tableBody.insertRow();
-                                        
-                                        // Add cells
-                                        const nameCell = row.insertCell(0);
-                                        const popCell = row.insertCell(1);
-                                        const facCell = row.insertCell(2);
-                                        const covCell = row.insertCell(3);
-                                        const priorityCell = row.insertCell(4);
-                                        
-                                        // Add content
-                                        nameCell.textContent = wardName;
-                                        popCell.textContent = population.toLocaleString();
-                                        facCell.textContent = facilities;
-                                        covCell.textContent = coverage.toFixed(1) + '%';
-                                        priorityCell.textContent = priorityScore.toFixed(2);
+        row.appendChild(coverageCell);
+        
+        // Priority Score
+        const priorityCell = document.createElement('td');
+        
+        // Calculate priority score with a more reasonable scale
+        const priorityScore = ward.priority_score;
+        
+        // Display the priority score
+        priorityCell.textContent = priorityScore.toFixed(1);
+        
+        // Add color coding based on priority score
+        if (priorityScore > 7) {
+            priorityCell.style.color = '#e74c3c'; // Red for high priority
+            priorityCell.style.fontWeight = 'bold';
+        } else if (priorityScore > 4) {
+            priorityCell.style.color = '#f39c12'; // Orange for medium priority
+        } else {
+            priorityCell.style.color = '#27ae60'; // Green for low priority
+        }
+        
+        // Add explanation tooltip
+        priorityCell.title = `Priority Score: Higher values indicate greater need for healthcare facilities.
+Population: ${ward.population.toLocaleString()}
+Facilities: ${ward.facilities || 0}
+Coverage: ${ward.coverage_percent.toFixed(1)}%`;
+        
+        row.appendChild(priorityCell);
+        
+        // Add row to table
+        tableBody.appendChild(row);
+    });
+    
+    console.log(`Populated table with ${sortedWards.length} wards`);
+}
 
-                                        // Add tooltip to explain priority score
-                                        priorityCell.title = `Priority Score: Higher values indicate greater need for healthcare facilities.
-                                        Calculation: (Population/${10000})/(Facilities+1)×(${100-coverage}%)`;
-
-                                        
-                                        // Color code priority
-                                        if (priorityScore > 5) {
-                                            priorityCell.style.backgroundColor = '#ffcccc';
-                                            priorityCell.style.color = '#cc0000';
-                                        } else if (priorityScore > 2) {
-                                            priorityCell.style.backgroundColor = '#fff2cc';
-                                            priorityCell.style.color = '#996600';
-                                        }
-                                    });
-                                    
-                                    // Sort table by priority score (highest first)
-                                    const rows = Array.from(tableBody.rows);
-                                    rows.sort((a, b) => {
-                                        const scoreA = parseFloat(a.cells[4].textContent);
-                                        const scoreB = parseFloat(b.cells[4].textContent);
-                                        return scoreB - scoreA;
-                                    });
-                                    
-                                    // Clear table and add sorted rows
-                                    tableBody.innerHTML = '';
-                                    rows.forEach(row => tableBody.appendChild(row));
-                                });
-                        }
-                    }
-                    
-                    // Helper function to calculate facilities per ward using turf.js
-                    function calculateFacilitiesPerWard(wards, facilities) {
-                        const facilitiesPerWard = {};
-                        
-                        // Initialize all wards with zero facilities
-                        wards.forEach(ward => {
-                            facilitiesPerWard[ward.properties.ward] = 0;
-                        });
-                        
-                        // Count facilities in each ward
-                        facilities.forEach(facility => {
-                            try {
-                                const facilityPoint = turf.point([
-                                    facility.geometry.coordinates[1],
-                                    facility.geometry.coordinates[0]
-                                ]);
-                                
-                                // Check which ward contains this facility
-                                for (const ward of wards) {
-                                    if (ward.geometry && ward.geometry.type === 'Polygon') {
-                                        const poly = turf.polygon(ward.geometry.coordinates);
-                                        if (turf.booleanPointInPolygon(facilityPoint, poly)) {
-                                            const wardName = ward.properties.ward;
-                                            facilitiesPerWard[wardName] = (facilitiesPerWard[wardName] || 0) + 1;
-                                            break;
-                                        }
-                                    } else if (ward.geometry && ward.geometry.type === 'MultiPolygon') {
-                                        const multiPoly = turf.multiPolygon(ward.geometry.coordinates);
-                                        if (turf.booleanPointInPolygon(facilityPoint, multiPoly)) {
-                                            const wardName = ward.properties.ward;
-                                            facilitiesPerWard[wardName] = (facilitiesPerWard[wardName] || 0) + 1;
-                                            break;
-                                        }
-                                    }
-                                }
-                            } catch (e) {
-                                console.error("Error checking facility location:", e);
-                            }
-                        });
-                        
-                        return facilitiesPerWard;
-                    }
                     
                     // Initialize the mini map
                     function initializeMiniMap() {
