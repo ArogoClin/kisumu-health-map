@@ -11,7 +11,6 @@ Django==4.2.19
 django-leaflet==0.31.0
 djangorestframework==3.15.2
 djangorestframework_simplejwt==5.4.0
-gdal==3.10.0
 geopandas==1.0.1
 gunicorn==23.0.0
 idna==3.10
