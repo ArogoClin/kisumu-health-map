@@ -43,4 +43,4 @@ tzdata==2025.1
 urllib3==2.3.0
 whitenoise==6.9.0
 zipp==3.21.0
-gdal
+gdal==3.10.3
