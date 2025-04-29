@@ -3,26 +3,30 @@ FROM python:3.9-slim
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
+    build-essential \
     gdal-bin \
     libgdal-dev \
     binutils \
     libproj-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Set environment variable for GDAL
+# Set environment variables for GDAL
 ENV CPLUS_INCLUDE_PATH=/usr/include/gdal
 ENV C_INCLUDE_PATH=/usr/include/gdal
-ENV GDAL_VERSION=3.6.2
+ENV LIBRARY_PATH=/usr/lib
 
 # Set working directory
 WORKDIR /app
 
-# Copy project files
-COPY . /app
+# Copy requirements first to leverage Docker cache
+COPY requirements.txt .
 
 # Install Python dependencies
-RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copy the rest of the application
+COPY . .
 
 # Expose port
 EXPOSE 8000
