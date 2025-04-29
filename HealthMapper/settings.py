@@ -32,16 +32,6 @@ DEBUG = os.getenv('DEBUG') == 'True'
 
 ALLOWED_HOSTS = [os.getenv('ALLOWED_HOSTS', '*')]
 
-# GDAL Configuration
-'''
-if os.name == 'nt':
-    VIRTUAL_ENV_BASE = r'C:\Users\AROGO\django_projects\Church_Attendance\crowdmap'
-    os.environ['PATH'] = r'C:\OSGeo4W\bin' + ';' + os.environ['PATH']
-    os.environ['PROJ_LIB'] = r'C:\OSGeo4W\share\proj' + ';' + os.environ['PATH']
-    GDAL_LIBRARY_PATH = r'C:\OSGeo4W\bin\gdal310.dll'
-'''
-
-
 
 # Application definition
 
@@ -149,7 +139,7 @@ STATIC_URL = '/static/'
 STATICFILES_DIRS = [
     os.path.join(BASE_DIR, 'static'),
 ]
-STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # Default primary key field type
