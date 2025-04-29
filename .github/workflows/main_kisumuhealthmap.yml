@@ -68,4 +68,4 @@ jobs:
         with:
           app-name: 'kisumuhealthmap'
           slot-name: 'Production'
-          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_FF90BB97D2DB4BBFBD07FC85AE793F35 }}
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_37DDAD2E1B664D6EBEF1F371EC7527BD }}
