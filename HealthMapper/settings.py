@@ -110,20 +110,18 @@ WSGI_APPLICATION = 'HealthMapper.wsgi.application'
 
 # Database Configuration for Railway
 # Database Configuration for Supabase
+# ✅ Replace with:
 DATABASES = {
     'default': {
         'ENGINE': 'django.contrib.gis.db.backends.postgis',
-        'NAME': 'postgres',  # Default Supabase database name
-        'USER': 'postgres',  # Default Supabase username
-        'PASSWORD': '0vMEFva12IjngxNF',  # Your Supabase database password
-        'HOST': 'db.tpiagcexddntgxplotbt.supabase.co',  # Replace with your Supabase host
-        'PORT': '5432',  # Default Supabase port
-        'OPTIONS': {
-            'sslmode': 'require',  # SSL encryption required
-        },
+        'NAME': os.getenv('SUPABASE_DB_NAME', 'postgres'),
+        'USER': os.getenv('SUPABASE_DB_USER', 'postgres'),
+        'PASSWORD': os.getenv('SUPABASE_DB_PASSWORD'),
+        'HOST': os.getenv('SUPABASE_DB_HOST'),
+        'PORT': os.getenv('SUPABASE_DB_PORT', '5432'),
+        'OPTIONS': {'sslmode': 'require'},
     }
 }
-
 
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
