@@ -30,9 +30,23 @@ SECRET_KEY = os.getenv('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG') == 'True'
 
-ALLOWED_HOSTS = ['kisumuhealthmap.azurewebsites.net']
+ALLOWED_HOSTS = [
+    os.getenv('RAILWAY_STATIC_URL', '').replace('https://', ''),
+    os.getenv('RAILWAY_PUBLIC_DOMAIN', ''),
+    'localhost',
+    '127.0.0.1',
+]
 
+CSRF_TRUSTED_ORIGINS = [
+    f"https://{host}" for host in ALLOWED_HOSTS if host
+]
 
+# GDAL 
+if os.name == 'nt':
+    VIRTUAL_ENV_BASE = r'C:\Users\AROGO\django_projects\Church_Attendance\crowdmap'
+    os.environ['PATH'] = r'C:\OSGeo4W\bin' + ';' + os.environ['PATH']
+    os.environ['PROJECT_LIB'] = r'C:\OSGeo4W\share\proj' + ';' + os.environ['PATH']
+    GDAL_LIBRARY_PATH = r'C:\OSGeo4W\bin\gdal310.dll'
 
 # Application definition
 
@@ -57,13 +71,14 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware'
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware'
+    
 ]
 
 ROOT_URLCONF = 'HealthMapper.urls'
@@ -90,19 +105,26 @@ WSGI_APPLICATION = 'HealthMapper.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
+# Database Configuration for Railway
 DATABASES = {
     'default': {
         'ENGINE': 'django.contrib.gis.db.backends.postgis',
-        'NAME': os.getenv('DB_NAME'),
-        'USER': os.getenv('DB_USER'),
-        'PASSWORD': os.getenv('DB_PASSWORD'),
-        'HOST': os.getenv('DB_HOST'),
-        'PORT': os.getenv('DB_PORT', '5432'),
-        'OPTIONS': {
-            'sslmode': 'require',
-        }
+        'NAME': os.getenv('SUPABASE_DB_NAME'),
+        'USER': os.getenv('SUPABASE_DB_USER'),
+        'PASSWORD': os.getenv('SUPABASE_DB_PASSWORD'),
+        'HOST': os.getenv('SUPABASE_DB_HOST'),
+        'PORT': os.getenv('SUPABASE_DB_PORT', '5432'),
     }
 }
+
+# Cache configuration
+if os.getenv('REDIS_URL'):
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": os.getenv('REDIS_URL'),
+        }
+    }
 
 
 
