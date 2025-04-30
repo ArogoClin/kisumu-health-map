@@ -41,12 +41,15 @@ CSRF_TRUSTED_ORIGINS = [
     f"https://{host}" for host in ALLOWED_HOSTS if host
 ]
 
-# GDAL 
-if os.name == 'nt':
+# GDAL Configuration - Only for local development
+if DEBUG and os.name == 'nt':  # Only on Windows in debug mode (local)
     VIRTUAL_ENV_BASE = r'C:\Users\AROGO\django_projects\Church_Attendance\crowdmap'
     os.environ['PATH'] = r'C:\OSGeo4W\bin' + ';' + os.environ['PATH']
     os.environ['PROJECT_LIB'] = r'C:\OSGeo4W\share\proj' + ';' + os.environ['PATH']
     GDAL_LIBRARY_PATH = r'C:\OSGeo4W\bin\gdal310.dll'
+elif not DEBUG:
+    # Production settings - will use GDAL from Docker/requirements.txt
+    pass
 
 # Application definition
 
@@ -71,7 +74,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware'
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
