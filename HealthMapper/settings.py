@@ -112,7 +112,7 @@ DATABASES = {
         'NAME': os.getenv('POSTGRES_DB', 'railway'),
         'USER': os.getenv('POSTGRES_USER', 'postgres'),
         'PASSWORD': os.getenv('POSTGRES_PASSWORD'),
-        'HOST': os.getenv('PGHOST', 'crossover.proxy.rlwy.net'),
+        'HOST': os.getenv('PGHOST', 'postgis.railway.internal'),
         'PORT': os.getenv('PGPORT', '5432'),
         'OPTIONS': {
                     'sslmode': 'require',
