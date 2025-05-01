@@ -109,17 +109,16 @@ WSGI_APPLICATION = 'HealthMapper.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.contrib.gis.db.backends.postgis',
-        'NAME': os.getenv('POSTGRES_DB', 'railway'),
-        'USER': os.getenv('POSTGRES_USER', 'postgres'),
-        'PASSWORD': os.getenv('POSTGRES_PASSWORD'),
-        'HOST': os.getenv('PGHOST', 'postgis.railway.internal'),
-        'PORT': os.getenv('PGPORT', '5432'),
+        'NAME': os.getenv('SUPABASE_DB_NAME'),
+        'USER': os.getenv('SUPABASE_DB_USER'),
+        'PASSWORD': os.getenv('SUPABASE_DB_PASSWORD'),
+        'HOST': os.getenv('SUPABASE_DB_HOST'),
+        'PORT': os.getenv('SUPABASE_DB_PORT', '5432'),
         'OPTIONS': {
-                    'sslmode': 'require',
-                    'connect_timeout':5,
-                    'options': '-c statement_timeout=5000',
+            'options': '-c search_path=public',
+            'sslmode': 'require',
+            'connect_timeout': 5  # Faster fail detection
         },
-
     }
 }
 
