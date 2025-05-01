@@ -29,4 +29,4 @@ RUN pip install --upgrade pip && \
 COPY . .
 
 # Run server using Railway's PORT environment variable
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-8000} HealthMapper.wsgi:application"]
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-8080} HealthMapper.wsgi:application"]
