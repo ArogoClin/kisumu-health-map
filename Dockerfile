@@ -21,13 +21,12 @@ COPY requirements.txt .
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy application
+# Copy application files (including start.sh)
 COPY . .
 
-# Create entrypoint
-RUN printf '#!/bin/sh\npython manage.py migrate --noinput\nexec "$@"\n' > /entrypoint.sh && \
-    chmod +x /entrypoint.sh
+# Set execute permissions and convert line endings
+RUN chmod +x /app/start.sh && \
+    sed -i 's/\r$//' /app/start.sh  # Remove Windows line endings if present
 
-ENTRYPOINT ["/entrypoint.sh"]
-# Fixed CMD instruction (removed curly braces)
-CMD ["gunicorn", "--bind", "0.0.0.0:$PORT", "--timeout", "120", "HealthMapper.wsgi:application"]
+# Run the application
+CMD ["/app/start.sh"]
