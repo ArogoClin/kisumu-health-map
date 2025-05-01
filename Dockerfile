@@ -1,4 +1,3 @@
-# Start from a Python base image
 FROM python:3.9-slim
 
 # Install system dependencies
@@ -10,23 +9,27 @@ RUN apt-get update && apt-get install -y \
     libproj-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Set environment variables for GDAL
+# GDAL environment variables
 ENV CPLUS_INCLUDE_PATH=/usr/include/gdal
 ENV C_INCLUDE_PATH=/usr/include/gdal
 ENV LIBRARY_PATH=/usr/lib
 
-# Set working directory
 WORKDIR /app
 
-# Copy requirements first to leverage Docker cache
-COPY requirements.txt .
-
 # Install Python dependencies
+COPY requirements.txt .
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application
+# Copy application
 COPY . .
 
-# Run server using Railway's PORT environment variable
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-8000} HealthMapper.wsgi:application"]
+# Minimal entrypoint for migrations
+RUN echo $'#!/bin/sh\n\
+python manage.py migrate --noinput\n\
+exec "$@"\n\
+' > /entrypoint.sh && \
+    chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["gunicorn", "--bind", "0.0.0.0:${PORT:-8000}", "--timeout", "120", "HealthMapper.wsgi:application"]
