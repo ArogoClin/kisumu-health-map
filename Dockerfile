@@ -1,6 +1,6 @@
 FROM python:3.9-slim
 
-# Install system dependencies (without dos2unix)
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
     gdal-bin \
@@ -24,9 +24,10 @@ RUN pip install --upgrade pip && \
 # Copy application
 COPY . .
 
-# Create entrypoint with proper Unix line endings (LF only)
+# Create entrypoint
 RUN printf '#!/bin/sh\npython manage.py migrate --noinput\nexec "$@"\n' > /entrypoint.sh && \
     chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["gunicorn", "--bind", "0.0.0.0:${PORT:-8000}", "--timeout", "120", "HealthMapper.wsgi:application"]
+# Fixed CMD instruction (removed curly braces)
+CMD ["gunicorn", "--bind", "0.0.0.0:$PORT", "--timeout", "120", "HealthMapper.wsgi:application"]
