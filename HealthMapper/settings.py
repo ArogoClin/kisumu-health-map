@@ -30,12 +30,7 @@ SECRET_KEY = os.getenv('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG') == 'True'
 
-ALLOWED_HOSTS = [
-    os.getenv('RAILWAY_STATIC_URL', '').replace('https://', ''),
-    os.getenv('RAILWAY_PUBLIC_DOMAIN', ''),
-    'localhost',
-    '127.0.0.1',
-]
+ALLOWED_HOSTS = ['*']
 
 CSRF_TRUSTED_ORIGINS = [
     f"https://{host}" for host in ALLOWED_HOSTS if host
@@ -45,7 +40,7 @@ CSRF_TRUSTED_ORIGINS = [
 if DEBUG and os.name == 'nt':  # Only on Windows in debug mode (local)
     VIRTUAL_ENV_BASE = r'C:\Users\AROGO\django_projects\Church_Attendance\crowdmap'
     os.environ['PATH'] = r'C:\OSGeo4W\bin' + ';' + os.environ['PATH']
-    os.environ['PROJECT_LIB'] = r'C:\OSGeo4W\share\proj' + ';' + os.environ['PATH']
+    os.environ['PROJ_LIB'] = r'C:\OSGeo4W\share\proj' + ';' + os.environ['PATH']
     GDAL_LIBRARY_PATH = r'C:\OSGeo4W\bin\gdal310.dll'
 elif not DEBUG:
     # Production settings - will use GDAL from Docker/requirements.txt
