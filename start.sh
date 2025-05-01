@@ -3,6 +3,14 @@
 # Exit immediately if any command fails
 set -e
 
+# Wait for database to be ready
+echo "Waiting for database..."
+while ! nc -z $SUPABASE_DB_HOST $SUPABASE_DB_PORT; do
+  sleep 2
+  echo "Retrying database connection..."
+done
+echo "Database connected!"
+
 # 1. Run database migrations
 python manage.py migrate --noinput
 
