@@ -109,7 +109,7 @@ WSGI_APPLICATION = 'HealthMapper.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.contrib.gis.db.backends.postgis',
-        'NAME': os.getenv('POSTGRES_DB', 'postgres'),
+        'NAME': os.getenv('POSTGRES_DB', 'railway'),
         'USER': os.getenv('POSTGRES_USER', 'postgres'),
         'PASSWORD': os.getenv('POSTGRES_PASSWORD'),
         'HOST': os.getenv('PGHOST'),
