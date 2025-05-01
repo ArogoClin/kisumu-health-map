@@ -24,7 +24,7 @@ RUN pip install --upgrade pip && \
 # Copy application (ensure .sh files have LF line endings)
 COPY . .
 
-# Create entrypoint with proper Unix line endings
+# Create entrypoint with proper Unix line endingsbb
 RUN echo -e '#!/bin/sh\n\
 python manage.py migrate --noinput\n\
 exec "$@"' > /entrypoint.sh && \
