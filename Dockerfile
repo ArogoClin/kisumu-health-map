@@ -21,15 +21,15 @@ COPY requirements.txt .
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy application
+# Copy application (ensure .sh files have LF line endings)
 COPY . .
 
-# Minimal entrypoint for migrations
-RUN echo $'#!/bin/sh\n\
+# Create entrypoint with proper Unix line endings
+RUN echo -e '#!/bin/sh\n\
 python manage.py migrate --noinput\n\
-exec "$@"\n\
-' > /entrypoint.sh && \
-    chmod +x /entrypoint.sh
+exec "$@"' > /entrypoint.sh && \
+    chmod +x /entrypoint.sh && \
+    dos2unix /entrypoint.sh  # Convert line endings
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["gunicorn", "--bind", "0.0.0.0:${PORT:-8000}", "--timeout", "120", "HealthMapper.wsgi:application"]
