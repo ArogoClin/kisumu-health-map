@@ -109,12 +109,17 @@ WSGI_APPLICATION = 'HealthMapper.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.contrib.gis.db.backends.postgis',
-        'NAME': os.getenv('SUPABASE_DB_NAME', 'postgres'),
-        'USER': os.getenv('SUPABASE_DB_USER', 'postgres'),
-        'PASSWORD': os.getenv('SUPABASE_DB_PASSWORD'),
-        'HOST': os.getenv('SUPABASE_DB_HOST'),
-        'PORT': os.getenv('SUPABASE_DB_PORT', '5432'),
-        'OPTIONS': {'sslmode': 'require'},
+        'NAME': os.getenv('POSTGRES_DB', 'postgres'),
+        'USER': os.getenv('POSTGRES_USER', 'postgres'),
+        'PASSWORD': os.getenv('POSTGRES_PASSWORD'),
+        'HOST': os.getenv('PGHOST'),
+        'PORT': os.getenv('PGPORT', '5432'),
+        'OPTIONS': {
+                    'sslmode': 'require',
+                    'connect_timeout':5,
+                    'options': '-c statement_timeout=5000',
+        },
+
     }
 }
 
