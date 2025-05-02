@@ -1,66 +1,46 @@
-# Core Django
-Django==4.2.19
-djangorestframework==3.15.2
-djangorestframework_simplejwt==5.4.0
-whitenoise==6.9.0
-
-# Database
-psycopg2-binary==2.9.10
-
-# Geo/GIS Libraries
-gdal==3.6.2
-pygdal==3.6.2.*  # Alternative GDAL binding
-geopandas==1.0.1
-pyproj==3.6.1
-rasterio==1.4.3
-shapely==2.0.7
-pyogrio==0.10.0
-django-leaflet==0.31.0
-
-# Data Processing
-pandas==2.2.3
-numpy==1.26.4  # More stable version for compatibility
-scipy==1.13.1
-scikit-learn==1.6.1
-networkx==3.2.1
-osmnx==2.0.2
-joblib==1.4.2
-
-# Utilities
-python-dotenv==1.1.0
-requests==2.32.3
 affine==2.4.0
+asgiref==3.8.1
+attrs==25.3.0
+certifi==2025.1.31
+charset-normalizer==3.4.1
 click==8.1.8
 click-plugins==1.1.1
 cligj==0.7.2
-point==0.0.1
-
-# Runtime
-gunicorn==23.0.0
-
-# Python Standard Library Backports
-typing_extensions==4.12.2
-importlib_metadata==8.6.1
-
-# Date/Time
-python-dateutil==2.9.0.post0
-pytz==2025.1
-tzdata==2025.1
-
-# Security
-certifi==2025.1.31
-PyJWT==2.10.1
-
-# Other
-attrs==25.3.0
-charset-normalizer==3.4.1
 colorama==0.4.6
+dj-database-url==2.3.0
+Django==4.2.19
+django-leaflet==0.31.0
+djangorestframework==3.15.2
+djangorestframework_simplejwt==5.4.0
+geopandas==1.0.1
+gunicorn==23.0.0
 idna==3.10
+importlib_metadata==8.6.1
+joblib==1.4.2
+networkx==3.2.1
+numpy==2.0.2
+osmnx==2.0.2
 packaging==24.2
+pandas==2.2.3
+point==0.0.1
+psycopg2-binary==2.9.10
+PyJWT==2.10.1
+pyogrio==0.10.0
 pyparsing==3.2.1
+pyproj==3.6.1
+python-dateutil==2.9.0.post0
+python-dotenv==1.1.0
+pytz==2025.1
+rasterio==1.4.3
+requests==2.32.3
+scikit-learn==1.6.1
+scipy==1.13.1
+shapely==2.0.7
 six==1.11.0
 sqlparse==0.5.3
 threadpoolctl==3.6.0
+typing_extensions==4.12.2
+tzdata==2025.1
 urllib3==2.3.0
+whitenoise==6.9.0
 zipp==3.21.0
-asgiref==3.8.1

@@ -13,7 +13,7 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 from pathlib import Path
 import os
 from dotenv import load_dotenv
-
+import dj_database_url
 # Load environment variables from .env file
 load_dotenv()
 
@@ -105,23 +105,21 @@ WSGI_APPLICATION = 'HealthMapper.wsgi.application'
 
 # Database Configuration for Railway
 # Database Configuration for Supabase
-# ✅ Replace with:
 DATABASES = {
     'default': {
         'ENGINE': 'django.contrib.gis.db.backends.postgis',
-        'NAME': os.getenv('SUPABASE_DB_NAME'),
-        'USER': os.getenv('SUPABASE_DB_USER'),
-        'PASSWORD': os.getenv('SUPABASE_DB_PASSWORD'),
-        'HOST': os.getenv('SUPABASE_DB_HOST'),
-        'PORT': os.getenv('SUPABASE_DB_PORT', '5432'),
+        'NAME': 'postgres',
+        'USER': 'postgres',
+        'PASSWORD': 'arogo@254Fay',
+        'HOST': 'db.tpiagcexddntgxplotbt.supabase.co',
+        'PORT': '5432',
         'OPTIONS': {
-            'options': '-c search_path=public',
             'sslmode': 'require',
-            'connect_timeout': 5  # Faster fail detection
+            'options': '-c search_path=public'
         },
     }
 }
-
+DATABASES['default']['ENGINE'] = 'django.contrib.gis.db.backends.postgis'
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
 
