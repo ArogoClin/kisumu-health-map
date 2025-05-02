@@ -109,10 +109,10 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.contrib.gis.db.backends.postgis',
         'NAME': 'postgres',
-        'USER': 'postgres',
+        'USER': 'postgres.tpiagcexddntgxplotbt',
         'PASSWORD': 'arogo@254Fay',
-        'HOST': 'db.tpiagcexddntgxplotbt.supabase.co',
-        'PORT': '5432',
+        'HOST': 'aws-0-ap-south-1.pooler.supabase.com',
+        'PORT': '6543',
         'OPTIONS': {
             'sslmode': 'require',
             'options': '-c search_path=public'
