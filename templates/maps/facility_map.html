@@ -1,82 +1,180 @@
 {% extends 'base.html' %}
-
 {% load static %}
 
 {% block content %}
-<div class="map-container">
-    <div class="sidebar">
-        <h3>Kisumu Health Facilities</h3>
-        <div class="layer-control">
-            <h4>Map Tools</h4>
-            <div class="tool-toggles">
-                <label><input type="checkbox" id="measurementTool"> Enable Distance Measurement</label>
+<div class="map-dashboard">
+    <!-- Mobile Toggle Button -->
+    <button id="sidebarToggle" class="sidebar-toggle">
+        <span class="toggle-icon">☰</span>
+    </button>
+    
+    <!-- Sidebar Panel -->
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <h2>Kisumu Health Facilities</h2>
+            <button class="close-sidebar" id="closeSidebar">×</button>
+        </div>
+        
+        <div class="sidebar-content">
+            <div class="panel">
+                <div class="panel-header">
+                    <h3>Map Tools</h3>
+                    <span class="panel-toggle">▼</span>
+                </div>
+                <div class="panel-body">
+                    <label class="toggle-control">
+                        <input type="checkbox" id="measurementTool">
+                        <span class="toggle-label">Distance Measurement</span>
+                    </label>
+                </div>
             </div>
             
-            <h4>Service Area Analysis</h4>
-            <div class="service-area-toggles">
-                <label><input type="checkbox" id="bufferToggle"> 5km Service Areas</label>
-                <label><input type="checkbox" id="underservedToggle"> Underserved Areas</label>
-                <label><input type="checkbox" id="coverageGapToggle"> Coverage Gaps</label>
+            <div class="panel">
+                <div class="panel-header">
+                    <h3>Service Area Analysis</h3>
+                    <span class="panel-toggle">▼</span>
+                </div>
+                <div class="panel-body">
+                    <label class="toggle-control">
+                        <input type="checkbox" id="bufferToggle">
+                        <span class="toggle-label">Service Areas</span>
+                    </label>
+                    <label class="toggle-control">
+                        <input type="checkbox" id="underservedToggle">
+                        <span class="toggle-label">Underserved Areas</span>
+                    </label>
+                    <label class="toggle-control">
+                        <input type="checkbox" id="coverageGapToggle">
+                        <span class="toggle-label">Coverage Gaps</span>
+                    </label>
+                </div>
             </div>
-
             
+            <div class="panel">
+                <div class="panel-header">
+                    <h3>Analysis Tools</h3>
+                    <span class="panel-toggle">▼</span>
+                </div>
+                <div class="panel-body">
+                    <button id="analyzeNeedsBtn" class="btn btn-primary">
+                        <i class="icon-analyze"></i> Analyze Healthcare Needs
+                    </button>
+                    <button id="analyzeSuitabilityBtn" class="btn btn-info">
+                        <i class="icon-location"></i> Analyze Optimal Locations
+                    </button>
+                    <button id="resetAnalysisBtn" class="btn btn-danger">
+                        <i class="icon-reset"></i> Reset Analysis
+                    </button>
+                    <button id="generateReportBtn" class="btn btn-success" style="display: none;">
+                        <i class="icon-report"></i> Generate Report
+                    </button>
+                    <div id="analysisStatus" class="status-message"></div>
+                </div>
+            </div>
             
-            <h4>Analysis Tools</h4>
-            <div class="analysis-tools">
-                <button id="analyzeNeedsBtn" class="analysis-btn">Analyze Healthcare Needs</button>
-                <button id="resetAnalysisBtn" class="analysis-btn" style="margin-top: 5px; background-color: #e74c3c;">Reset Analysis</button>
-                <button id="generateReportBtn" class="analysis-btn" style="margin-top: 5px; background-color: #27ae60; display: none;">Generate Report</button>
-                <button id="debugBtn" style="position: fixed; bottom: 10px; right: 10px; z-index: 1000; background: #f44336; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; display: none;">Debug Layers</button>
-                <button id="analyzeSuitabilityBtn" class="analysis-btn" style="margin-top: 5px; background-color: #3f51b5;">Analyze Optimal Locations</button>
-
-                <div id="analysisStatus" style="margin-top: 5px; font-size: 0.9em; display: none;"></div>
+            <div class="panel">
+                <div class="panel-header">
+                    <h3>Reports & Dashboard</h3>
+                    <span class="panel-toggle">▼</span>
+                </div>
+                <div class="panel-body">
+                    <a href="{% url 'healthcare_dashboard' %}" class="btn btn-success btn-block">
+                        <i class="icon-dashboard"></i> View Healthcare Dashboard
+                    </a>
+                </div>
             </div>
-
-            <h4>Reports & Dashboard</h4>
-            <div class="dashboard-link">
-                <a href="{% url 'healthcare_dashboard' %}" class="dashboard-btn">View Healthcare Dashboard</a>
+            
+            <div class="panel">
+                <div class="panel-header">
+                    <h3>Map Layers</h3>
+                    <span class="panel-toggle">▼</span>
+                </div>
+                <div class="panel-body">
+                    <label class="toggle-control">
+                        <input type="checkbox" checked id="countyLayer">
+                        <span class="toggle-label">County Boundary</span>
+                    </label>
+                    <label class="toggle-control">
+                        <input type="checkbox" checked id="constituencyLayer">
+                        <span class="toggle-label">Constituencies</span>
+                    </label>
+                    <label class="toggle-control">
+                        <input type="checkbox" checked id="wardLayer">
+                        <span class="toggle-label">Wards</span>
+                    </label>
+                    <label class="toggle-control">
+                        <input type="checkbox" checked id="facilityLayer">
+                        <span class="toggle-label">Health Facilities</span>
+                    </label>
+                </div>
             </div>
-
-            <h4>Map Layers</h4>
-            <div class="layer-toggles">
-                <label><input type="checkbox" checked id="countyLayer"> County Boundary</label>
-                <label><input type="checkbox" checked id="constituencyLayer"> Constituencies</label>
-                <label><input type="checkbox" checked id="wardLayer"> Wards</label>
-                <label><input type="checkbox" checked id="facilityLayer"> Health Facilities</label>
+            
+            <div class="panel">
+                <div class="panel-header">
+                    <h3>Labels</h3>
+                    <span class="panel-toggle">▼</span>
+                </div>
+                <div class="panel-body">
+                    <label class="toggle-control">
+                        <input type="checkbox" id="constituencyLabels">
+                        <span class="toggle-label">Constituency Names</span>
+                    </label>
+                    <label class="toggle-control">
+                        <input type="checkbox" id="wardLabels">
+                        <span class="toggle-label">Ward Names</span>
+                    </label>
+                </div>
             </div>
-            <h4>Labels</h4>
-            <div class="label-toggles">
-                <label><input type="checkbox" id="constituencyLabels"> Show Constituency Names</label>
-                <label><input type="checkbox" id="wardLabels"> Show Ward Names</label>
-            </div>
-            <h4>Population Data</h4>
-            <div class="population-toggles">
-                <label><input type="checkbox" id="populationDensityToggle"> Show Population Density</label>
-                <div id="populationControls" style="display: none; margin-top: 10px;">
-                    {% if population_datasets|length > 1 %}
-                        <label for="datasetSelect">Dataset:</label>
-                        <select id="datasetSelect">
+            
+            <div class="panel">
+                <div class="panel-header">
+                    <h3>Population Data</h3>
+                    <span class="panel-toggle">▼</span>
+                </div>
+                <div class="panel-body">
+                    <label class="toggle-control">
+                        <input type="checkbox" id="populationDensityToggle">
+                        <span class="toggle-label">Population Density</span>
+                    </label>
+                    
+                    <div id="populationControls" class="sub-controls">
+                        {% if population_datasets|length > 1 %}
+                            <label for="datasetSelect">Dataset:</label>
+                            <select id="datasetSelect" class="form-control">
+                                {% for dataset in population_datasets %}
+                                    <option value="{{ dataset.id }}">{{ dataset.name }} ({{ dataset.year }})</option>
+                                {% endfor %}
+                            </select>
+                        {% else %}
                             {% for dataset in population_datasets %}
-                                <option value="{{ dataset.id }}">{{ dataset.name }} ({{ dataset.year }})</option>
+                                <input type="hidden" id="datasetSelect" value="{{ dataset.id }}">
+                                <div class="dataset-info">{{ dataset.name }} ({{ dataset.year }})</div>
                             {% endfor %}
-                        </select>
-                    {% else %}
-                        {% for dataset in population_datasets %}
-                            <input type="hidden" id="datasetSelect" value="{{ dataset.id }}">
-                            <div><strong>Dataset:</strong> {{ dataset.name }} ({{ dataset.year }})</div>
-                        {% endfor %}
-                    {% endif %}
-                    <div class="density-legend" id="densityLegend" style="margin-top: 10px;"></div>
-                    <button id="resetDensityScale" style="margin-top: 5px; padding: 2px 8px; font-size: 0.9em;">Reset Density Scale</button>
+                        {% endif %}
+                        
+                        <div class="density-legend" id="densityLegend"></div>
+                        <button id="resetDensityScale" class="btn btn-sm btn-outline">Reset Density Scale</button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="panel">
+                <div class="panel-header">
+                    <h3>Legend</h3>
+                    <span class="panel-toggle">▼</span>
+                </div>
+                <div class="panel-body" id="mapLegend">
+                    <!-- Legend content will be dynamically populated -->
                 </div>
             </div>
         </div>
-        <div class="legend">
-            <h4>Legend</h4>
-        </div>
     </div>
-
-    <div id="map"></div>
+    
+    <!-- Main Map Container -->
+    <div id="map" class="map-area"></div>
+    
+    <!-- Debug Button (Hidden) -->
+    <button id="debugBtn" class="debug-button">Debug Layers</button>
 </div>
 {% endblock %}
 
@@ -84,133 +182,248 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-sidebar-v2@3.2.3/css/leaflet-sidebar.min.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
 
 <style>
-    .map-container {
-        display: flex;
-        height: 90vh;
-    }
-   
-    .sidebar {
-        width: 300px;
-        padding: 20px;
-        background: #fff;
-        box-shadow: 0 0 10px rgba(0,0,0,0.1);
-        z-index: 1000;
-        overflow-y: auto;
-    }
-   
-    #map {
-        flex-grow: 1;
-        height: 100%;
-    }
-   
-    .layer-control {
-        margin: 20px 0;
-    }
-   
-    .layer-toggles label, .label-toggles label, .tool-toggles label, .service-area-toggles label {
-        display: block;
-        margin: 10px 0;
-        cursor: pointer;
-    }
-   
-    .legend {
-        padding: 10px;
-        background: #f8f9fa;
-        border-radius: 4px;
+    :root {
+        --primary-color: #3498db;
+        --primary-dark: #2980b9;
+        --success-color: #27ae60;
+        --success-dark: #219653;
+        --danger-color: #e74c3c;
+        --danger-dark: #c0392b;
+        --info-color: #3f51b5;
+        --info-dark: #303f9f;
+        --text-color: #2c3e50;
+        --light-bg: #f8f9fa;
+        --border-color: #ddd;
+        --shadow: 0 2px 10px rgba(0,0,0,0.1);
+        --transition: all 0.3s ease;
     }
 
+    /* Map Dashboard Layout */
+    .map-dashboard {
+        display: flex;
+        height: 90vh;
+        position: relative;
+        overflow: hidden;
+    }
+
+    /* Sidebar Styling */
+    .sidebar {
+        width: 320px;
+        background: white;
+        box-shadow: var(--shadow);
+        z-index: 1000;
+        transition: var(--transition);
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+    }
+    
+    .sidebar-header {
+        padding: 15px;
+        background: var(--primary-color);
+        color: white;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .sidebar-header h2 {
+        margin: 0;
+        font-size: 1.4rem;
+        font-weight: 600;
+    }
+    
+    .close-sidebar {
+        background: none;
+        border: none;
+        color: white;
+        font-size: 1.5rem;
+        cursor: pointer;
+        display: none;
+    }
+    
+    .sidebar-content {
+        flex: 1;
+        overflow-y: auto;
+        padding: 10px;
+    }
+
+    /* Panel Styling */
+    .panel {
+        margin-bottom: 10px;
+        border-radius: 6px;
+        overflow: hidden;
+        background: white;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    
+    .panel-header {
+        background: var(--light-bg);
+        padding: 10px 15px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        cursor: pointer;
+        border-bottom: 1px solid var(--border-color);
+    }
+    
+    .panel-header h3 {
+        margin: 0;
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--text-color);
+    }
+    
+    .panel-toggle {
+        transition: var(--transition);
+    }
+    
+    .panel-body {
+        padding: 12px 15px;
+        background: white;
+    }
+    
+    /* Toggle Controls */
+    .toggle-control {
+        display: flex;
+        align-items: center;
+        margin-bottom: 8px;
+        cursor: pointer;
+    }
+    
+    .toggle-control input[type="checkbox"] {
+        margin-right: 8px;
+    }
+    
+    .toggle-label {
+        font-size: 0.95rem;
+        color: var(--text-color);
+    }
+    
+    /* Button Styling */
+    .btn {
+        display: block;
+        width: 100%;
+        padding: 10px;
+        margin-bottom: 8px;
+        border: none;
+        border-radius: 4px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: var(--transition);
+        text-align: center;
+        text-decoration: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .btn i {
+        margin-right: 8px;
+    }
+    
+    .btn-primary {
+        background-color: var(--primary-color);
+        color: white;
+    }
+    
+    .btn-primary:hover {
+        background-color: var(--primary-dark);
+    }
+    
+    .btn-success {
+        background-color: var(--success-color);
+        color: white;
+    }
+    
+    .btn-success:hover {
+        background-color: var(--success-dark);
+    }
+    
+    .btn-danger {
+        background-color: var(--danger-color);
+        color: white;
+    }
+    
+    .btn-danger:hover {
+        background-color: var(--danger-dark);
+    }
+    
+    .btn-info {
+        background-color: var(--info-color);
+        color: white;
+    }
+    
+    .btn-info:hover {
+        background-color: var(--info-dark);
+    }
+    
+    .btn-outline {
+        background-color: transparent;
+        border: 1px solid var(--border-color);
+        color: var(--text-color);
+    }
+    
+    .btn-outline:hover {
+        background-color: var(--light-bg);
+    }
+    
+    .btn-sm {
+        padding: 5px 10px;
+        font-size: 0.85rem;
+    }
+    
+    .btn-block {
+        display: block;
+        width: 100%;
+    }
+
+    /* Map Area */
+    .map-area {
+        flex-grow: 1;
+        height: 100%;
+        z-index: 1;
+    }
+
+    /* Sub Controls */
+    .sub-controls {
+        background: var(--light-bg);
+        padding: 10px;
+        border-radius: 4px;
+        margin-top: 10px;
+        display: none;
+    }
+    
+    .density-legend {
+        background: white;
+        padding: 10px;
+        border-radius: 4px;
+        border: 1px solid var(--border-color);
+        margin: 10px 0;
+    }
+    
+    /* Status Message */
+    .status-message {
+        margin-top: 10px;
+        padding: 8px;
+        border-radius: 4px;
+        background: var(--light-bg);
+        font-size: 0.9rem;
+        display: none;
+    }
+    
+    /* Popup Styling */
     .facility-popup {
         max-width: 300px;
     }
-
+    
     .facility-popup h3 {
         margin: 0 0 10px 0;
-        color: #2c3e50;
-    }
-
-    .map-label {
-        background: transparent;
-        border: none;
-        color: #2c3e50;
-        font-weight: bold;
-        text-shadow: 1px 1px 2px white;
-        text-align: center;
-    }
-
-    .population-toggles {
-        margin: 15px 0;
-        padding: 5px 0;
-    }
-   
-    #populationControls {
-        background: #f8f9fa;
-        padding: 8px;
-        border-radius: 4px;
-    }
-   
-    #datasetSelect {
-        width: 100%;
-        padding: 5px;
-        margin-bottom: 5px;
-        border: 1px solid #ddd;
-        border-radius: 3px;
-    }
-   
-    .density-legend {
-        background: white;
-        padding: 8px;
-        border-radius: 4px;
-        border: 1px solid #ddd;
-        font-size: 0.9em;
-    }
-
-    .analysis-tools {
-        margin: 15px 0;
-    }
-   
-    .analysis-btn {
-        width: 100%;
-        padding: 8px;
-        background-color: #3498db;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        font-weight: bold;
-    }
-   
-    .analysis-btn:hover {
-        background-color: #2980b9;
-    }
-   
-    .priority-scale {
-        height: 10px;
-        background: linear-gradient(to right, #90caf9, #a5d6a7, #ce93d8, #ffcc80, #ff8a80);
-        border-radius: 5px;
-        margin: 5px 0;
-    }
-   
-    .priority-marker {
-        position: relative;
-        height: 15px;
-    }
-   
-    .priority-marker-pointer {
-        position: absolute;
-        transform: translateX(-50%);
-        top: 0;
-    }
-    
-    .service-area-toggles {
-        margin: 15px 0;
-        padding: 5px 0;
-    }
-
-    .rank-marker {
-        background: transparent;
-        border: none;
+        color: var(--text-color);
+        font-size: 1.1rem;
     }
     
     .suitability-popup {
@@ -219,42 +432,130 @@
     
     .suitability-popup h3 {
         margin: 0 0 10px 0;
-        color: #2c3e50;
+        color: var(--text-color);
     }
     
     .select-location-btn {
-        background-color: #3f51b5;
+        background-color: var(--info-color);
         color: white;
         border: none;
-        padding: 5px 10px;
-        border-radius: 3px;
+        padding: 8px;
+        border-radius: 4px;
         cursor: pointer;
-        margin-top: 10px;
         width: 100%;
+        margin-top: 10px;
     }
     
     .select-location-btn:hover {
-        background-color: #303f9f;
+        background-color: var(--info-dark);
     }
-
-    .dashboard-btn {
-        display: block;
-        width: 100%;
-        padding: 8px;
-        background-color: #27ae60;
-        color: white;
-        text-align: center;
-        border-radius: 4px;
-        text-decoration: none;
+        /* Map Labels */
+    .map-label {
+        background: transparent;
+        border: none;
+        color: var(--text-color);
         font-weight: bold;
-        margin-top: 10px;
+        text-shadow: 1px 1px 2px white;
+        text-align: center;
     }
     
-    .dashboard-btn:hover {
-        background-color: #219653;
+    /* Priority Scale for Analysis */
+    .priority-scale {
+        height: 10px;
+        background: linear-gradient(to right, #90caf9, #a5d6a7, #ce93d8, #ffcc80, #ff8a80);
+        border-radius: 5px;
+        margin: 5px 0;
+    }
+    
+    .priority-marker {
+        position: relative;
+        height: 15px;
+    }
+    
+    .priority-marker-pointer {
+        position: absolute;
+        transform: translateX(-50%);
+        top: 0;
+    }
+    
+    .rank-marker {
+        background: transparent;
+        border: none;
+    }
+    
+    /* Mobile Toggle Button */
+    .sidebar-toggle {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        z-index: 999;
+        background: white;
+        border: none;
+        border-radius: 4px;
+        box-shadow: var(--shadow);
+        width: 40px;
+        height: 40px;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+    }
+    
+    .toggle-icon {
+        font-size: 1.5rem;
+        color: var(--text-color);
+    }
+    
+    /* Debug Button */
+    .debug-button {
+        position: fixed;
+        bottom: 10px;
+        right: 10px;
+        z-index: 1000;
+        background: var(--danger-color);
         color: white;
+        border: none;
+        padding: 10px;
+        border-radius: 5px;
+        cursor: pointer;
+        display: none;
     }
     
+    /* Dataset Info */
+    .dataset-info {
+        background: white;
+        padding: 8px;
+        border-radius: 4px;
+        border: 1px solid var(--border-color);
+        margin-bottom: 10px;
+        font-weight: 500;
+    }
+    
+    /* Responsive Design */
+    @media (max-width: 768px) {
+        .sidebar {
+            position: absolute;
+            left: -320px;
+            height: 100%;
+            width: 280px;
+        }
+        
+        .sidebar.active {
+            left: 0;
+        }
+        
+        .sidebar-toggle {
+            display: flex;
+        }
+        
+        .close-sidebar {
+            display: block;
+        }
+        
+        .map-area {
+            width: 100%;
+        }
+    }
 </style>
 {% endblock %}
 
@@ -284,5 +585,63 @@
 <script src="{% static 'map/js/report-generator.js' %}"></script>
 <script src="{% static 'map/js/travel-time.js' %}"></script>
 <script src="{% static 'map/js/site-suitability.js' %}"></script>
+
+<!-- Main application script -->
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Panel toggle functionality
+        document.querySelectorAll('.panel-header').forEach(header => {
+            header.addEventListener('click', function() {
+                const panel = this.parentElement;
+                const body = panel.querySelector('.panel-body');
+                const toggle = this.querySelector('.panel-toggle');
+                
+                if (body.style.display === 'none') {
+                    body.style.display = 'block';
+                    toggle.textContent = '▼';
+                } else {
+                    body.style.display = 'none';
+                    toggle.textContent = '▶';
+                }
+            });
+        });
+        
+        // Population density toggle
+        const populationToggle = document.getElementById('populationDensityToggle');
+        const populationControls = document.getElementById('populationControls');
+        
+        populationToggle.addEventListener('change', function() {
+            populationControls.style.display = this.checked ? 'block' : 'none';
+        });
+        
+        // Mobile sidebar toggle
+        const sidebarToggle = document.getElementById('sidebarToggle');
+        const closeSidebar = document.getElementById('closeSidebar');
+        const sidebar = document.getElementById('sidebar');
+        
+        sidebarToggle.addEventListener('click', function() {
+            sidebar.classList.add('active');
+        });
+        
+        closeSidebar.addEventListener('click', function() {
+            sidebar.classList.remove('active');
+        });
+        
+        // Close sidebar when clicking outside on mobile
+        document.getElementById('map').addEventListener('click', function() {
+            if (window.innerWidth <= 768) {
+                sidebar.classList.remove('active');
+            }
+        });
+        
+        // Handle window resize
+        window.addEventListener('resize', function() {
+            if (window.innerWidth > 768) {
+                sidebar.classList.remove('active');
+            }
+        });
+    });
+</script>
+
 <script src="{% static 'map/js/main.js' %}"></script>
 {% endblock %}
