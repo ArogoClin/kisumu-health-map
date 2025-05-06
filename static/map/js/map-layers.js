@@ -142,7 +142,7 @@ legend.innerHTML = `
         <span style="display: inline-block; width: 20px; height: 3px; background: ${styles.ward.color}"></span> Wards
     </div>
     <div style="margin-bottom: 5px">
-        <span style="display: inline-block; width: 20px; height: 10px; background: rgba(46, 204, 113, 0.2); border: 1px solid #27ae60;"></span> 5km Service Area
+        <span style="display: inline-block; width: 20px; height: 10px; background: rgba(46, 204, 113, 0.2); border: 1px solid #27ae60;"></span> Service Areas
     </div>
     <div style="margin-bottom: 5px">
         <span style="display: inline-block; width: 20px; height: 10px; background: rgba(231, 76, 60, 0.3); border: 1px solid #e74c3c;"></span> Underserved Areas
