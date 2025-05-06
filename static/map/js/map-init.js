@@ -33,18 +33,18 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 // Style definitions
 const styles = {
     county: {
-        color: "#2c3e50",
+        color: "#34495e",        // Darker blue-gray
         weight: 3,
         fillOpacity: 0.1
     },
     constituency: {
-        color: "#3498db",
+        color: "#16a085",        // Teal
         weight: 2,
         fillOpacity: 0.1
     },
     ward: {
-        color: "#95a5a6",
-        weight: 1,
+        color: "#8e44ad",        // Darker purple
+        weight: 2,
         fillOpacity: 0.05
     }
 };
