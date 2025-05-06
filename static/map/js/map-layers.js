@@ -21,7 +21,7 @@ const wardLayer = L.geoJSON(wardsData, {
     onEachFeature: (feature, layer) => {
         layer.bindPopup(`
             <h3>${feature.properties.ward}</h3>
-            <p>Population (2009): ${feature.properties.pop2009}</p>
+            <p>Population (2019): ${feature.properties.pop2019}</p>
             <p>Sub-county: ${feature.properties.subcounty}</p>
         `);
     }
@@ -30,7 +30,7 @@ const wardLayer = L.geoJSON(wardsData, {
 // Custom icon for facilities
 const facilityIcon = L.icon({
     iconUrl: 'https://www.freeiconspng.com/uploads/ambulance-cross-hospital-icon-11.png',
-    iconSize: [32, 32],
+    iconSize: [25, 25],
     iconAnchor: [16, 32],
     popupAnchor: [0, -32]
 });
@@ -44,7 +44,6 @@ const facilitiesLayer = L.geoJSON(facilitiesData, {
             <div class="facility-popup">
                 <h3>${feature.properties.name}</h3>
                 <p><strong>Type:</strong> ${feature.properties.facility_type}</p>
-                <p><strong>Capacity:</strong> ${feature.properties.capacity}</p>
             </div>
         `);
     }
