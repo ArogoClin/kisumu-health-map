@@ -127,7 +127,7 @@ document.getElementById('wardLabels').onchange = (e) => {
 };
 
 // Add dynamic legend
-const legend = document.querySelector('.legend');
+const legend = document.getElementById('mapLegend');
 legend.innerHTML = `
     <h4>Legend</h4>
     <div style="margin-bottom: 10px">
