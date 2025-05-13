@@ -2,9 +2,9 @@
 const map = L.map('map', {
     center: [-0.1022, 34.7617],
     zoom: 10,
-    zoomSnap: 0.5,         // Allow for half-zoom levels
-    zoomDelta: 0.5,        // Smoother zoom steps
-    wheelPxPerZoomLevel: 100, // More sensitive wheel zooming
+    zoomSnap: 0.1,         // Allow for half-zoom levels
+    zoomDelta: 0.1,        // Smoother zoom steps
+    wheelPxPerZoomLevel: 80, // More sensitive wheel zooming
     zoomAnimation: true,   // Enable zoom animations
     markerZoomAnimation: true, // Animate markers during zoom
     fadeAnimation: true,   // Fade in/out during zoom
@@ -100,6 +100,23 @@ homeButton.onAdd = function(map) {
     return div;
 };
 homeButton.addTo(map);
+
+// Add a north arrow with SVG
+const northArrow = L.control({position: 'topleft'});
+northArrow.onAdd = function(map) {
+    const div = L.DomUtil.create('div', 'leaflet-bar leaflet-control north-arrow');
+    div.innerHTML = `
+        <div style="background: white; padding: 5px; border-radius: 4px; box-shadow: 0 1px 5px rgba(0,0,0,0.2);">
+            <svg width="20" height="30" viewBox="0 0 20 30">
+                <path d="M10 0 L20 20 L10 15 L0 20 Z" fill="#333"/>
+                <text x="10" y="28" text-anchor="middle" font-size="10">N</text>
+            </svg>
+        </div>
+    `;
+    return div;
+};
+northArrow.addTo(map);
+
 
 // Add layer control with basemaps
 const overlays = {}; // We'll add our data layers here
