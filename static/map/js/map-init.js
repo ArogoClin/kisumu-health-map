@@ -12,7 +12,7 @@ const map = L.map('map', {
         [-0.5, 34.2],      // Southwest corner
         [0.3, 35.3]        // Northeast corner
     ),
-    maxBoundsViscosity: 0.8 // How "sticky" the bounds are (0-1)
+    maxBoundsViscosity: 0.1 // How "sticky" the bounds are (0-1)
 });
 
 // Initialize the FeatureGroup for the drawControl
