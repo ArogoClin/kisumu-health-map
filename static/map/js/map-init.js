@@ -1,19 +1,17 @@
+
 // Initialize map with enhanced options for smoother zooming
 const map = L.map('map', {
     center: [-0.1022, 34.7617],
     zoom: 10,
-    zoomSnap: 0.1,         // Allow for half-zoom levels
+    zoomSnap: 0.1,         // Allow for finer zoom levels
     zoomDelta: 0.1,        // Smoother zoom steps
-    wheelPxPerZoomLevel: 80, // More sensitive wheel zooming
+    wheelPxPerZoomLevel: 100, // More sensitive wheel zooming
     zoomAnimation: true,   // Enable zoom animations
     markerZoomAnimation: true, // Animate markers during zoom
-    fadeAnimation: true,   // Fade in/out during zoom
-    maxBounds: L.latLngBounds(
-        [-0.5, 34.2],      // Southwest corner
-        [0.3, 35.3]        // Northeast corner
-    ),
-    maxBoundsViscosity: 0.1 // How "sticky" the bounds are (0-1)
+    fadeAnimation: true    // Fade in/out during zoom
+    // maxBounds and maxBoundsViscosity removed
 });
+
 
 // Initialize the FeatureGroup for the drawControl
 const drawnItems = new L.FeatureGroup();
