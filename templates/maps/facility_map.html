@@ -183,7 +183,6 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-sidebar-v2@3.2.3/css/leaflet-sidebar.min.css" />
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
-
 <style>
     :root {
         --primary-color: #3498db;
@@ -219,6 +218,12 @@
         display: flex;
         flex-direction: column;
         height: 100%;
+        position: absolute;
+        left: 0;
+    }
+    
+    .sidebar.collapsed {
+        left: -320px;
     }
     
     .sidebar-header {
@@ -242,7 +247,6 @@
         color: white;
         font-size: 1.5rem;
         cursor: pointer;
-        display: none;
     }
     
     .sidebar-content {
@@ -383,9 +387,18 @@
 
     /* Map Area */
     .map-area {
-        flex-grow: 1;
+        position: absolute;
+        left: 320px;
+        right: 0;
+        top: 0;
+        bottom: 0;
         height: 100%;
         z-index: 1;
+        transition: var(--transition);
+    }
+    
+    .map-area.sidebar-collapsed {
+        left: 0;
     }
 
     /* Sub Controls */
@@ -449,7 +462,8 @@
     .select-location-btn:hover {
         background-color: var(--info-dark);
     }
-        /* Map Labels */
+    
+    /* Map Labels */
     .map-label {
         background: transparent;
         border: none;
@@ -483,7 +497,7 @@
         border: none;
     }
     
-    /* Mobile Toggle Button */
+    /* Sidebar Toggle Button - visible on all screen sizes */
     .sidebar-toggle {
         position: absolute;
         top: 10px;
@@ -495,7 +509,7 @@
         box-shadow: var(--shadow);
         width: 40px;
         height: 40px;
-        display: none;
+        display: flex;
         align-items: center;
         justify-content: center;
         cursor: pointer;
@@ -534,30 +548,16 @@
     /* Responsive Design */
     @media (max-width: 768px) {
         .sidebar {
-            position: absolute;
-            left: -320px;
-            height: 100%;
             width: 280px;
         }
         
-        .sidebar.active {
-            left: 0;
-        }
-        
-        .sidebar-toggle {
-            display: flex;
-        }
-        
-        .close-sidebar {
-            display: block;
-        }
-        
         .map-area {
-            width: 100%;
+            left: 0; /* Start with map taking full width on mobile */
         }
     }
 </style>
 {% endblock %}
+
 
 {% block scripts %}
 <!-- External libraries -->
@@ -641,6 +641,41 @@
             }
         });
     });
+
+    // Update the sidebar toggle JavaScript
+document.addEventListener('DOMContentLoaded', function() {
+    // Panel toggle functionality (keep existing code)
+    
+    // Sidebar toggle for all screen sizes
+    const sidebarToggle = document.getElementById('sidebarToggle');
+    const closeSidebar = document.getElementById('closeSidebar');
+    const sidebar = document.getElementById('sidebar');
+    const mapArea = document.getElementById('map');
+    
+    // Function to toggle sidebar
+    function toggleSidebar() {
+        sidebar.classList.toggle('collapsed');
+        mapArea.classList.toggle('sidebar-collapsed');
+        
+        // Notify Leaflet that the map size has changed
+        if (window.map) {
+            window.setTimeout(function() {
+                window.map.invalidateSize();
+            }, 300); // Wait for transition to complete
+        }
+    }
+    
+    // Toggle button event
+    sidebarToggle.addEventListener('click', function() {
+        toggleSidebar();
+    });
+    
+    // Close button event
+    closeSidebar.addEventListener('click', function() {
+        toggleSidebar();
+    });
+});
+
 </script>
 
 <script src="{% static 'map/js/main.js' %}"></script>
