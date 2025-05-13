@@ -77,13 +77,32 @@ const styles = {
     }
 };
 
-// Add a scale bar (professional touch)
+// Enhanced scale bar
 L.control.scale({
     maxWidth: 200,
     metric: true,
     imperial: false,
-    position: 'bottomleft'
+    position: 'bottomleft',
+    updateWhenIdle: true
 }).addTo(map);
+
+// Add custom styling for the scale bar
+const scaleStyle = document.createElement('style');
+scaleStyle.textContent = `
+    .leaflet-control-scale {
+        background-color: rgba(255, 255, 255, 0.8);
+        padding: 2px 5px;
+        border-radius: 4px;
+        box-shadow: 0 1px 5px rgba(0,0,0,0.2);
+    }
+    .leaflet-control-scale-line {
+        border-color: #333;
+        color: #333;
+        font-weight: bold;
+    }
+`;
+document.head.appendChild(scaleStyle);
+
 
 // Add a home button to reset view
 const homeButton = L.control({position: 'topleft'});
